@@ -46,8 +46,7 @@
             <el-select 
                 v-model="selectedSampleIndex" 
                 style="width: 260px;"
-                virtual-scroll
-                :popper-append-to-body="false">
+                :teleported="false">
                 <el-option 
                     v-for="(item, index) in sampleLibrary" 
                     :key="index" 
@@ -61,8 +60,11 @@
                 :show-file-list="false" 
                 accept=".csv"
                 :before-upload="handleCsvUpload"
+                :disabled="isImporting"
                 action="">
-                <el-button type="success" plain>导入CSV样本</el-button>
+                <el-button type="success" plain :loading="isImporting">
+                    {{ isImporting ? '导入中...' : '导入CSV样本' }}
+                </el-button>
             </el-upload>
         </div>
         <div class="control-item">
@@ -173,6 +175,7 @@ createApp({
         const activeTab = ref('fault');
         const API_BASE = "http://localhost:8000";
         const addDialogVisible = ref(false);
+        const isImporting = ref(false);
         
         // 初始样本库
         const sampleLibrary = ref(window.SAMPLE_LIBRARY || [
@@ -207,69 +210,88 @@ createApp({
 
         // ========== 优化版 CSV 导入函数 ==========
         const handleCsvUpload = (file) => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const text = e.target.result;
-                const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
-                
-                if (lines.length < 2) {
-                    ElementPlus.ElMessage.error('CSV文件内容为空或格式错误');
-                    return;
-                }
-
-                // 解析表头
-                const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-                
-                // 校验特征列
-                const missingCols = FEATURE_COLUMNS.filter(col => !headers.includes(col));
-                if (missingCols.length > 0) {
-                    ElementPlus.ElMessage.error(`CSV缺少必要特征列：${missingCols.join(', ')}`);
-                    return;
-                }
-
-                // 获取列索引
-                const colIndex = {};
-                headers.forEach((h, i) => colIndex[h] = i);
-
-                // 只解析前 MAX_IMPORT_COUNT 条，防止卡死
-                const endLine = Math.min(lines.length, MAX_IMPORT_COUNT + 1);
-                let count = 0;
-                const tempList = [];
-
-                for (let i = 1; i < endLine; i++) {
-                    const values = lines[i].split(',');
-                    if (values.length < headers.length) continue;
-
-                    // 提取14个特征值
-                    const features = FEATURE_COLUMNS.map(col => parseFloat(values[colIndex[col]]));
-                    if (features.some(isNaN)) continue;
-
-                    // 生成名称
-                    let name;
-                    if (colIndex['unit'] !== undefined && colIndex['cycle'] !== undefined) {
-                        const unit = values[colIndex['unit']];
-                        const cycle = values[colIndex['cycle']];
-                        name = `设备${unit}-第${cycle}周期`;
-                    } else {
-                        name = `CSV样本-${i}`;
+            isImporting.value = true;
+            
+            // 异步执行，不阻塞主线程
+            setTimeout(() => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    let text = e.target.result;
+                    
+                    // 修复：去除 UTF-8 BOM 头（解决你CSV第一列﻿unit识别失败的问题）
+                    if (text.charCodeAt(0) === 0xFEFF) {
+                        text = text.slice(1);
+                    }
+                    
+                    const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+                    
+                    if (lines.length < 2) {
+                        ElementPlus.ElMessage.error('CSV文件内容为空或格式错误');
+                        isImporting.value = false;
+                        return;
                     }
 
-                    tempList.push({ name, features });
-                    count++;
-                }
+                    // 解析表头，去除空格转小写
+                    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+                    
+                    // 校验特征列
+                    const missingCols = FEATURE_COLUMNS.filter(col => !headers.includes(col));
+                    if (missingCols.length > 0) {
+                        ElementPlus.ElMessage.error(`CSV缺少必要特征列：${missingCols.join(', ')}`);
+                        isImporting.value = false;
+                        return;
+                    }
 
-                // 一次性追加到样本库，减少DOM更新次数
-                sampleLibrary.value = sampleLibrary.value.concat(tempList);
-                
-                if (count > 0) {
-                    selectedSampleIndex.value = sampleLibrary.value.length - count;
-                    ElementPlus.ElMessage.success(`成功导入 ${count} 条样本（已限制最多${MAX_IMPORT_COUNT}条）`);
-                } else {
-                    ElementPlus.ElMessage.warning('未解析到有效数据行');
-                }
-            };
+                    // 获取列索引
+                    const colIndex = {};
+                    headers.forEach((h, i) => colIndex[h] = i);
 
-            reader.readAsText(file, 'UTF-8');
+                    // 只取前 MAX_IMPORT_COUNT 条
+                    const endLine = Math.min(lines.length, MAX_IMPORT_COUNT + 1);
+                    const tempList = [];
+
+                    for (let i = 1; i < endLine; i++) {
+                        const values = lines[i].split(',');
+                        if (values.length < headers.length) continue;
+
+                        // 提取14个特征值
+                        const features = FEATURE_COLUMNS.map(col => parseFloat(values[colIndex[col]]));
+                        if (features.some(isNaN)) continue;
+
+                        // 生成名称：优先用unit和cycle
+                        let name;
+                        if (colIndex['unit'] !== undefined && colIndex['cycle'] !== undefined) {
+                            const unit = values[colIndex['unit']];
+                            const cycle = values[colIndex['cycle']];
+                            name = `设备${unit}-第${cycle}周期`;
+                        } else {
+                            name = `CSV样本-${i}`;
+                        }
+
+                        tempList.push({ name, features });
+                    }
+
+                    // 一次性更新，减少重绘
+                    sampleLibrary.value = sampleLibrary.value.concat(tempList);
+                    
+                    if (tempList.length > 0) {
+                        selectedSampleIndex.value = sampleLibrary.value.length - tempList.length;
+                        ElementPlus.ElMessage.success(`成功导入 ${tempList.length} 条样本`);
+                    } else {
+                        ElementPlus.ElMessage.warning('未解析到有效数据行');
+                    }
+                    
+                    isImporting.value = false;
+                };
+
+                reader.onerror = () => {
+                    ElementPlus.ElMessage.error('文件读取失败');
+                    isImporting.value = false;
+                };
+
+                reader.readAsText(file, 'UTF-8');
+            }, 50);
+
             return false;
         };
 
@@ -377,6 +399,7 @@ createApp({
             selectedSampleIndex,
             deviceUnit, 
             addDialogVisible,
+            isImporting,
             newSample,
             handleCsvUpload,
             confirmAddSample,
