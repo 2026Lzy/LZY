@@ -8,6 +8,8 @@
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
     <script src="https://unpkg.com/element-plus"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <!-- 引入本地预置样本库（可选，没有也不影响） -->
+    <script src="./sample_data.js"></script>
     <style>
         body { margin: 0; background: #f5f7fa; font-family: "Microsoft YaHei", sans-serif; }
         .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
@@ -15,16 +17,19 @@
         .control-bar { 
             display: flex; 
             justify-content: center; 
-            gap: 30px; 
+            align-items: center;
+            gap: 24px; 
             margin-bottom: 20px;
             padding: 15px;
             background: white;
             border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            flex-wrap: wrap;
         }
         .control-item { display: flex; align-items: center; gap: 8px; }
         .demo-card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
         .result-item { margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; }
+        .feature-input { width: 100%; min-height: 80px; font-family: Consolas, monospace; font-size: 13px; }
     </style>
 </head>
 <body>
@@ -39,7 +44,7 @@
         </div>
         <div class="control-item">
             <span>样本选择：</span>
-            <el-select v-model="selectedSampleIndex" style="width: 220px;">
+            <el-select v-model="selectedSampleIndex" style="width: 260px;">
                 <el-option 
                     v-for="(item, index) in sampleLibrary" 
                     :key="index" 
@@ -49,11 +54,33 @@
             </el-select>
         </div>
         <div class="control-item">
-            <span style="color: #909399; font-size: 12px;">
-                切换样本后执行诊断，结果会对应变化
-            </span>
+            <el-button type="primary" plain @click="addDialogVisible = true">+ 添加本地样本</el-button>
         </div>
     </div>
+
+    <!-- 添加样本弹窗 -->
+    <el-dialog v-model="addDialogVisible" title="添加本地样本" width="500px">
+        <el-form label-width="100px">
+            <el-form-item label="样本名称">
+                <el-input v-model="newSample.name" placeholder="例如：设备3-第50周期-故障状态"></el-input>
+            </el-form-item>
+            <el-form-item label="特征数据">
+                <el-input 
+                    v-model="newSample.featuresText" 
+                    type="textarea" 
+                    class="feature-input"
+                    placeholder="粘贴14个传感器数值，支持逗号、空格或换行分隔&#10;顺序必须对应：s2 s3 s4 s7 s8 s9 s11 s12 s13 s14 s15 s17 s20 s21">
+                </el-input>
+                <div style="font-size: 12px; color: #909399; margin-top: 4px;">
+                    从 test.csv 复制对应行的14个传感器值粘贴进来即可
+                </div>
+            </el-form-item>
+        </el-form>
+        <template #footer>
+            <el-button @click="addDialogVisible = false">取消</el-button>
+            <el-button type="primary" @click="confirmAddSample">确认添加</el-button>
+        </template>
+    </el-dialog>
     
     <el-tabs v-model="activeTab" type="card">
         <!-- 故障诊断 -->
@@ -122,45 +149,88 @@
 </div>
 
 <script>
-const { createApp, ref, computed, onMounted } = Vue;
+const { createApp, ref, computed, onMounted, reactive } = Vue;
 
 createApp({
     setup() {
         const activeTab = ref('fault');
         const API_BASE = "http://localhost:8000";
+        const addDialogVisible = ref(false);
         
-        // ===================== 样本库 =====================
-        // 可自行添加、修改，每组样本为14维传感器特征值
-        const sampleLibrary = ref([
+        // 初始样本库：优先加载本地 sample_data.js，没有就用默认3组
+        const sampleLibrary = ref(window.SAMPLE_LIBRARY || [
             {
                 name: "样本1 - 正常健康状态",
-                features: [-0.8, -0.5, -0.6, 0.9, -0.4, -0.7, -0.3, 0.8, -0.6, -0.5, -0.4, -0.8, 0.9, 0.7]
+                features: [-0.812, -0.534, -0.678, 0.945, -0.421, -0.756, -0.312, 0.823, -0.601, -0.547, -0.418, -0.835, 0.912, 0.734]
             },
             {
                 name: "样本2 - 早期退化状态",
-                features: [0.2, 0.1, -0.1, 0.3, -0.2, 0.1, 0.2, 0.5, -0.1, 0.0, 0.1, -0.3, 0.4, 0.2]
+                features: [0.215, 0.108, -0.123, 0.342, -0.207, 0.116, 0.221, 0.513, -0.109, 0.014, 0.125, -0.318, 0.427, 0.209]
             },
             {
                 name: "样本3 - 严重故障状态",
-                features: [1.8, 1.5, 1.2, -1.5, 1.6, 1.3, 1.7, -1.2, 1.4, 1.1, 1.5, -1.8, -1.2, -1.6]
+                features: [1.823, 1.546, 1.237, -1.512, 1.634, 1.325, 1.741, -1.218, 1.429, 1.136, 1.542, -1.815, -1.237, -1.628]
             }
         ]);
 
-        // 当前选中的样本索引
         const selectedSampleIndex = ref(0);
-        // 当前使用的特征数组
-        const currentFeatures = computed(() => sampleLibrary.value[selectedSampleIndex.value].features);
-
-        // 设备编号
+        const currentFeatures = computed(() => sampleLibrary.value[selectedSampleIndex.value]?.features || []);
         const deviceUnit = ref(1);
         
+        // 新增样本的表单数据
+        const newSample = reactive({
+            name: '',
+            featuresText: ''
+        });
+
         const faultResult = ref(null);
         const rulResult = ref(null);
         const maintResult = ref(null);
         const historyList = ref([]);
 
+        // 确认添加样本
+        const confirmAddSample = () => {
+            if (!newSample.name.trim()) {
+                ElementPlus.ElMessage.warning('请输入样本名称');
+                return;
+            }
+            // 解析文本：按逗号、空格、换行分割，过滤空值，转成数字
+            const values = newSample.featuresText
+                .trim()
+                .split(/[\s,，\n]+/)
+                .filter(v => v !== '')
+                .map(v => parseFloat(v));
+            
+            if (values.length !== 14) {
+                ElementPlus.ElMessage.error(`特征数量错误，需要14个数值，当前解析到${values.length}个`);
+                return;
+            }
+            if (values.some(isNaN)) {
+                ElementPlus.ElMessage.error('存在无法识别的数字，请检查数据格式');
+                return;
+            }
+
+            // 添加到样本库
+            sampleLibrary.value.push({
+                name: newSample.name.trim(),
+                features: values
+            });
+            // 自动选中新添加的样本
+            selectedSampleIndex.value = sampleLibrary.value.length - 1;
+            
+            // 重置表单并关闭弹窗
+            newSample.name = '';
+            newSample.featuresText = '';
+            addDialogVisible.value = false;
+            ElementPlus.ElMessage.success('样本添加成功');
+        };
+
         // 故障诊断
         const runFaultDiagnose = async () => {
+            if (currentFeatures.value.length !== 14) {
+                ElementPlus.ElMessage.error("样本特征数量不正确，应为14维");
+                return;
+            }
             const res = await fetch(`${API_BASE}/api/fault/predict`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -175,6 +245,10 @@ createApp({
 
         // 寿命预测
         const runRULPredict = async () => {
+            if (currentFeatures.value.length !== 14) {
+                ElementPlus.ElMessage.error("样本特征数量不正确，应为14维");
+                return;
+            }
             const res = await fetch(`${API_BASE}/api/rul/predict`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -224,6 +298,9 @@ createApp({
             sampleLibrary,
             selectedSampleIndex,
             deviceUnit, 
+            addDialogVisible,
+            newSample,
+            confirmAddSample,
             faultResult, 
             rulResult, 
             maintResult, 
