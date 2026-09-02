@@ -43,7 +43,11 @@
         </div>
         <div class="control-item">
             <span>样本选择：</span>
-            <el-select v-model="selectedSampleIndex" style="width: 260px;">
+            <el-select 
+                v-model="selectedSampleIndex" 
+                style="width: 260px;"
+                virtual-scroll
+                :popper-append-to-body="false">
                 <el-option 
                     v-for="(item, index) in sampleLibrary" 
                     :key="index" 
@@ -159,8 +163,10 @@
 <script>
 const { createApp, ref, computed, onMounted, reactive } = Vue;
 
-// 模型要求的14个特征列，顺序必须严格对应
+// 模型要求的14个特征列，顺序严格对应
 const FEATURE_COLUMNS = ['s2','s3','s4','s7','s8','s9','s11','s12','s13','s14','s15','s17','s20','s21'];
+// 单次CSV导入最大数量，防止页面卡死
+const MAX_IMPORT_COUNT = 20;
 
 createApp({
     setup() {
@@ -199,7 +205,7 @@ createApp({
         const maintResult = ref(null);
         const historyList = ref([]);
 
-        // ========== CSV 导入核心函数 ==========
+        // ========== 优化版 CSV 导入函数 ==========
         const handleCsvUpload = (file) => {
             const reader = new FileReader();
             reader.onload = (e) => {
@@ -211,33 +217,34 @@ createApp({
                     return;
                 }
 
-                // 解析表头，转小写
+                // 解析表头
                 const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
                 
-                // 校验必要的特征列是否存在
+                // 校验特征列
                 const missingCols = FEATURE_COLUMNS.filter(col => !headers.includes(col));
                 if (missingCols.length > 0) {
                     ElementPlus.ElMessage.error(`CSV缺少必要特征列：${missingCols.join(', ')}`);
                     return;
                 }
 
-                // 获取各列索引
+                // 获取列索引
                 const colIndex = {};
                 headers.forEach((h, i) => colIndex[h] = i);
 
-                // 遍历数据行
+                // 只解析前 MAX_IMPORT_COUNT 条，防止卡死
+                const endLine = Math.min(lines.length, MAX_IMPORT_COUNT + 1);
                 let count = 0;
-                for (let i = 1; i < lines.length; i++) {
+                const tempList = [];
+
+                for (let i = 1; i < endLine; i++) {
                     const values = lines[i].split(',');
                     if (values.length < headers.length) continue;
 
                     // 提取14个特征值
                     const features = FEATURE_COLUMNS.map(col => parseFloat(values[colIndex[col]]));
-                    
-                    // 校验数据有效性
                     if (features.some(isNaN)) continue;
 
-                    // 生成样本名称：优先用unit和cycle，否则用行号
+                    // 生成名称
                     let name;
                     if (colIndex['unit'] !== undefined && colIndex['cycle'] !== undefined) {
                         const unit = values[colIndex['unit']];
@@ -247,21 +254,23 @@ createApp({
                         name = `CSV样本-${i}`;
                     }
 
-                    sampleLibrary.value.push({ name, features });
+                    tempList.push({ name, features });
                     count++;
                 }
 
+                // 一次性追加到样本库，减少DOM更新次数
+                sampleLibrary.value = sampleLibrary.value.concat(tempList);
+                
                 if (count > 0) {
-                    // 自动选中第一个新导入的样本
                     selectedSampleIndex.value = sampleLibrary.value.length - count;
-                    ElementPlus.ElMessage.success(`成功导入 ${count} 条样本数据`);
+                    ElementPlus.ElMessage.success(`成功导入 ${count} 条样本（已限制最多${MAX_IMPORT_COUNT}条）`);
                 } else {
                     ElementPlus.ElMessage.warning('未解析到有效数据行');
                 }
             };
 
             reader.readAsText(file, 'UTF-8');
-            return false; // 阻止默认上传行为
+            return false;
         };
 
         // ========== 手动添加样本 ==========
