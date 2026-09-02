@@ -1,1 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>机械设备故障预测与运维决策系统</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        body { margin: 0; background: #f5f7fa; font-family: "Microsoft YaHei", sans-serif; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .header { text-align: center; margin-bottom: 20px; color: #303133; }
+        .demo-card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+        .result-item { margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; }
+    </style>
+</head>
+<body>
+<div id="app" class="container">
+    <h2 class="header">基于多智能算法的机械设备故障预测与运维决策系统</h2>
+    
+    <el-tabs v-model="activeTab" type="card">
+        <!-- 故障诊断 -->
+        <el-tab-pane label="故障诊断" name="fault">
+            <div class="demo-card">
+                <h3>智能故障分类诊断</h3>
+                <p>输入14维传感器特征值，输出故障状态与置信度</p>
+                <el-button type="primary" @click="runFaultDiagnose" style="margin: 10px 0;">执行故障诊断</el-button>
+                <div v-if="faultResult" class="result-item">
+                    <p><strong>设备编号：</strong>{{ faultResult.unit }}</p>
+                    <p><strong>故障状态：</strong>{{ faultResult.fault_label === 1 ? '存在故障' : '正常' }}</p>
+                    <p><strong>置信度：</strong>{{ (faultResult.confidence * 100).toFixed(2) }}%</p>
+                </div>
+            </div>
+        </el-tab-pane>
+
+        <!-- 寿命预测 -->
+        <el-tab-pane label="寿命预测" name="rul">
+            <div class="demo-card">
+                <h3>剩余使用寿命(RUL)预测</h3>
+                <p>基于时序传感器数据预测设备剩余运行周期</p>
+                <el-button type="primary" @click="runRULPredict" style="margin: 10px 0;">执行寿命预测</el-button>
+                <div v-if="rulResult" class="result-item">
+                    <p><strong>设备编号：</strong>{{ rulResult.unit }}</p>
+                    <p><strong>剩余寿命：</strong>{{ rulResult.rul_value }} 周期</p>
+                    <el-tag :type="rulResult.risk_level === '高风险' ? 'danger' : rulResult.risk_level === '中风险' ? 'warning' : 'success'">
+                        {{ rulResult.risk_level }}
+                    </el-tag>
+                </div>
+            </div>
+        </el-tab-pane>
+
+        <!-- 运维决策 -->
+        <el-tab-pane label="运维决策" name="maintenance">
+            <div class="demo-card">
+                <h3>智能运维优化决策</h3>
+                <p>综合故障状态、剩余寿命、设备权重生成运维方案</p>
+                <el-button type="primary" @click="runMaintenance" style="margin: 10px 0;">生成运维决策</el-button>
+                <div v-if="maintResult" class="result-item">
+                    <p><strong>设备编号：</strong>{{ maintResult.unit }}</p>
+                    <p><strong>优先级分数：</strong>{{ maintResult.priority }}</p>
+                    <el-tag :type="maintResult.priority_level === '紧急' ? 'danger' : maintResult.priority_level === '重要' ? 'warning' : 'info'">
+                        {{ maintResult.priority_level }}
+                    </el-tag>
+                    <p><strong>运维建议：</strong>{{ maintResult.suggestion }}</p>
+                    <p><strong>备件建议：</strong>{{ maintResult.spare_parts }}</p>
+                </div>
+            </div>
+        </el-tab-pane>
+
+        <!-- 历史记录 -->
+        <el-tab-pane label="历史记录" name="history">
+            <div class="demo-card">
+                <h3>运维决策历史记录</h3>
+                <el-table :data="historyList" border style="width: 100%">
+                    <el-table-column prop="unit" label="设备编号" width="80"></el-table-column>
+                    <el-table-column prop="priority_level" label="优先级" width="80"></el-table-column>
+                    <el-table-column prop="suggestion" label="运维建议"></el-table-column>
+                    <el-table-column prop="create_time" label="时间" width="180"></el-table-column>
+                </el-table>
+            </div>
+        </el-tab-pane>
+    </el-tabs>
+</div>
+
+<script>
+const { createApp, ref, onMounted } = Vue;
+
+createApp({
+    setup() {
+        const activeTab = ref('fault');
+        const API_BASE = "http://localhost:8000";
+        
+        // 演示用样本特征（来自测试集第1台设备）
+        const sampleFeatures = [0.5, -0.3, 0.2, -0.8, 0.1, -0.6, 0.4, -0.2, 0.3, -0.5, 0.1, -0.3, 0.2, -0.4];
+        const sampleUnit = 1;
+        
+        const faultResult = ref(null);
+        const rulResult = ref(null);
+        const maintResult = ref(null);
+        const historyList = ref([]);
+
+        const runFaultDiagnose = async () => {
+            const res = await fetch(`${API_BASE}/api/fault/predict`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ features: sampleFeatures, unit: sampleUnit })
+            });
+            faultResult.value = await res.json();
+            ElementPlus.ElMessage.success("故障诊断完成");
+        };
+
+        const runRULPredict = async () => {
+            const res = await fetch(`${API_BASE}/api/rul/predict`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ features: sampleFeatures, unit: sampleUnit })
+            });
+            rulResult.value = await res.json();
+            ElementPlus.ElMessage.success("寿命预测完成");
+        };
+
+        const runMaintenance = async () => {
+            if (!faultResult.value || !rulResult.value) {
+                ElementPlus.ElMessage.warning("请先执行故障诊断和寿命预测");
+                return;
+            }
+            const res = await fetch(`${API_BASE}/api/maintenance/optimize`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    unit: sampleUnit,
+                    fault_label: faultResult.value.fault_label,
+                    fault_confidence: faultResult.value.confidence,
+                    rul: rulResult.value.rul_value,
+                    device_weight: 0.6
+                })
+            });
+            maintResult.value = await res.json();
+            loadHistory();
+            ElementPlus.ElMessage.success("运维决策生成完成");
+        };
+
+        const loadHistory = async () => {
+            const res = await fetch(`${API_BASE}/api/maintenance/history`);
+            historyList.value = await res.json();
+        };
+
+        onMounted(() => {
+            loadHistory();
+        });
+
+        return {
+            activeTab, faultResult, rulResult, maintResult, historyList,
+            runFaultDiagnose, runRULPredict, runMaintenance
+        };
+    }
+}).use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>
 
