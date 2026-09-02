@@ -11,7 +11,18 @@
     <style>
         body { margin: 0; background: #f5f7fa; font-family: "Microsoft YaHei", sans-serif; }
         .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        .header { text-align: center; margin-bottom: 20px; color: #303133; }
+        .header { text-align: center; margin-bottom: 10px; color: #303133; }
+        .control-bar { 
+            display: flex; 
+            justify-content: center; 
+            gap: 30px; 
+            margin-bottom: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .control-item { display: flex; align-items: center; gap: 8px; }
         .demo-card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
         .result-item { margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; }
     </style>
@@ -19,16 +30,41 @@
 <body>
 <div id="app" class="container">
     <h2 class="header">基于多智能算法的机械设备故障预测与运维决策系统</h2>
+
+    <!-- 顶部控制面板 -->
+    <div class="control-bar">
+        <div class="control-item">
+            <span>设备编号：</span>
+            <el-input-number v-model="deviceUnit" :min="1" :max="100" style="width: 140px;"></el-input-number>
+        </div>
+        <div class="control-item">
+            <span>样本选择：</span>
+            <el-select v-model="selectedSampleIndex" style="width: 220px;">
+                <el-option 
+                    v-for="(item, index) in sampleLibrary" 
+                    :key="index" 
+                    :label="item.name" 
+                    :value="index">
+                </el-option>
+            </el-select>
+        </div>
+        <div class="control-item">
+            <span style="color: #909399; font-size: 12px;">
+                切换样本后执行诊断，结果会对应变化
+            </span>
+        </div>
+    </div>
     
     <el-tabs v-model="activeTab" type="card">
         <!-- 故障诊断 -->
         <el-tab-pane label="故障诊断" name="fault">
             <div class="demo-card">
                 <h3>智能故障分类诊断</h3>
-                <p>输入14维传感器特征值，输出故障状态与置信度</p>
+                <p>基于当前选中的传感器样本，输出故障状态与置信度</p>
                 <el-button type="primary" @click="runFaultDiagnose" style="margin: 10px 0;">执行故障诊断</el-button>
                 <div v-if="faultResult" class="result-item">
                     <p><strong>设备编号：</strong>{{ faultResult.unit }}</p>
+                    <p><strong>当前样本：</strong>{{ sampleLibrary[selectedSampleIndex].name }}</p>
                     <p><strong>故障状态：</strong>{{ faultResult.fault_label === 1 ? '存在故障' : '正常' }}</p>
                     <p><strong>置信度：</strong>{{ (faultResult.confidence * 100).toFixed(2) }}%</p>
                 </div>
@@ -39,10 +75,11 @@
         <el-tab-pane label="寿命预测" name="rul">
             <div class="demo-card">
                 <h3>剩余使用寿命(RUL)预测</h3>
-                <p>基于时序传感器数据预测设备剩余运行周期</p>
+                <p>基于传感器样本预测设备剩余运行周期</p>
                 <el-button type="primary" @click="runRULPredict" style="margin: 10px 0;">执行寿命预测</el-button>
                 <div v-if="rulResult" class="result-item">
                     <p><strong>设备编号：</strong>{{ rulResult.unit }}</p>
+                    <p><strong>当前样本：</strong>{{ sampleLibrary[selectedSampleIndex].name }}</p>
                     <p><strong>剩余寿命：</strong>{{ rulResult.rul_value }} 周期</p>
                     <el-tag :type="rulResult.risk_level === '高风险' ? 'danger' : rulResult.risk_level === '中风险' ? 'warning' : 'success'">
                         {{ rulResult.risk_level }}
@@ -85,42 +122,72 @@
 </div>
 
 <script>
-const { createApp, ref, onMounted } = Vue;
+const { createApp, ref, computed, onMounted } = Vue;
 
 createApp({
     setup() {
         const activeTab = ref('fault');
         const API_BASE = "http://localhost:8000";
         
-        // 演示用样本特征（来自测试集第1台设备）
-        const sampleFeatures = [0.5, -0.3, 0.2, -0.8, 0.1, -0.6, 0.4, -0.2, 0.3, -0.5, 0.1, -0.3, 0.2, -0.4];
-        const sampleUnit = 1;
+        // ===================== 样本库 =====================
+        // 可自行添加、修改，每组样本为14维传感器特征值
+        const sampleLibrary = ref([
+            {
+                name: "样本1 - 正常健康状态",
+                features: [-0.8, -0.5, -0.6, 0.9, -0.4, -0.7, -0.3, 0.8, -0.6, -0.5, -0.4, -0.8, 0.9, 0.7]
+            },
+            {
+                name: "样本2 - 早期退化状态",
+                features: [0.2, 0.1, -0.1, 0.3, -0.2, 0.1, 0.2, 0.5, -0.1, 0.0, 0.1, -0.3, 0.4, 0.2]
+            },
+            {
+                name: "样本3 - 严重故障状态",
+                features: [1.8, 1.5, 1.2, -1.5, 1.6, 1.3, 1.7, -1.2, 1.4, 1.1, 1.5, -1.8, -1.2, -1.6]
+            }
+        ]);
+
+        // 当前选中的样本索引
+        const selectedSampleIndex = ref(0);
+        // 当前使用的特征数组
+        const currentFeatures = computed(() => sampleLibrary.value[selectedSampleIndex.value].features);
+
+        // 设备编号
+        const deviceUnit = ref(1);
         
         const faultResult = ref(null);
         const rulResult = ref(null);
         const maintResult = ref(null);
         const historyList = ref([]);
 
+        // 故障诊断
         const runFaultDiagnose = async () => {
             const res = await fetch(`${API_BASE}/api/fault/predict`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ features: sampleFeatures, unit: sampleUnit })
+                body: JSON.stringify({ 
+                    features: currentFeatures.value, 
+                    unit: deviceUnit.value 
+                })
             });
             faultResult.value = await res.json();
             ElementPlus.ElMessage.success("故障诊断完成");
         };
 
+        // 寿命预测
         const runRULPredict = async () => {
             const res = await fetch(`${API_BASE}/api/rul/predict`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ features: sampleFeatures, unit: sampleUnit })
+                body: JSON.stringify({ 
+                    features: currentFeatures.value, 
+                    unit: deviceUnit.value 
+                })
             });
             rulResult.value = await res.json();
             ElementPlus.ElMessage.success("寿命预测完成");
         };
 
+        // 运维决策
         const runMaintenance = async () => {
             if (!faultResult.value || !rulResult.value) {
                 ElementPlus.ElMessage.warning("请先执行故障诊断和寿命预测");
@@ -130,7 +197,7 @@ createApp({
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
-                    unit: sampleUnit,
+                    unit: deviceUnit.value,
                     fault_label: faultResult.value.fault_label,
                     fault_confidence: faultResult.value.confidence,
                     rul: rulResult.value.rul_value,
@@ -142,6 +209,7 @@ createApp({
             ElementPlus.ElMessage.success("运维决策生成完成");
         };
 
+        // 加载历史记录
         const loadHistory = async () => {
             const res = await fetch(`${API_BASE}/api/maintenance/history`);
             historyList.value = await res.json();
@@ -152,8 +220,17 @@ createApp({
         });
 
         return {
-            activeTab, faultResult, rulResult, maintResult, historyList,
-            runFaultDiagnose, runRULPredict, runMaintenance
+            activeTab, 
+            sampleLibrary,
+            selectedSampleIndex,
+            deviceUnit, 
+            faultResult, 
+            rulResult, 
+            maintResult, 
+            historyList,
+            runFaultDiagnose, 
+            runRULPredict, 
+            runMaintenance
         };
     }
 }).use(ElementPlus).mount('#app');
