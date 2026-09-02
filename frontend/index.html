@@ -8,7 +8,6 @@
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
     <script src="https://unpkg.com/element-plus"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
-    <!-- 引入本地预置样本库（可选，没有也不影响） -->
     <script src="./sample_data.js"></script>
     <style>
         body { margin: 0; background: #f5f7fa; font-family: "Microsoft YaHei", sans-serif; }
@@ -18,7 +17,7 @@
             display: flex; 
             justify-content: center; 
             align-items: center;
-            gap: 24px; 
+            gap: 20px; 
             margin-bottom: 20px;
             padding: 15px;
             background: white;
@@ -54,12 +53,21 @@
             </el-select>
         </div>
         <div class="control-item">
-            <el-button type="primary" plain @click="addDialogVisible = true">+ 添加本地样本</el-button>
+            <el-upload 
+                :show-file-list="false" 
+                accept=".csv"
+                :before-upload="handleCsvUpload"
+                action="">
+                <el-button type="success" plain>导入CSV样本</el-button>
+            </el-upload>
+        </div>
+        <div class="control-item">
+            <el-button type="primary" plain @click="addDialogVisible = true">手动添加样本</el-button>
         </div>
     </div>
 
-    <!-- 添加样本弹窗 -->
-    <el-dialog v-model="addDialogVisible" title="添加本地样本" width="500px">
+    <!-- 手动添加样本弹窗 -->
+    <el-dialog v-model="addDialogVisible" title="手动添加样本" width="500px">
         <el-form label-width="100px">
             <el-form-item label="样本名称">
                 <el-input v-model="newSample.name" placeholder="例如：设备3-第50周期-故障状态"></el-input>
@@ -151,13 +159,16 @@
 <script>
 const { createApp, ref, computed, onMounted, reactive } = Vue;
 
+// 模型要求的14个特征列，顺序必须严格对应
+const FEATURE_COLUMNS = ['s2','s3','s4','s7','s8','s9','s11','s12','s13','s14','s15','s17','s20','s21'];
+
 createApp({
     setup() {
         const activeTab = ref('fault');
         const API_BASE = "http://localhost:8000";
         const addDialogVisible = ref(false);
         
-        // 初始样本库：优先加载本地 sample_data.js，没有就用默认3组
+        // 初始样本库
         const sampleLibrary = ref(window.SAMPLE_LIBRARY || [
             {
                 name: "样本1 - 正常健康状态",
@@ -177,7 +188,7 @@ createApp({
         const currentFeatures = computed(() => sampleLibrary.value[selectedSampleIndex.value]?.features || []);
         const deviceUnit = ref(1);
         
-        // 新增样本的表单数据
+        // 手动添加样本表单
         const newSample = reactive({
             name: '',
             featuresText: ''
@@ -188,13 +199,77 @@ createApp({
         const maintResult = ref(null);
         const historyList = ref([]);
 
-        // 确认添加样本
+        // ========== CSV 导入核心函数 ==========
+        const handleCsvUpload = (file) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const text = e.target.result;
+                const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+                
+                if (lines.length < 2) {
+                    ElementPlus.ElMessage.error('CSV文件内容为空或格式错误');
+                    return;
+                }
+
+                // 解析表头，转小写
+                const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+                
+                // 校验必要的特征列是否存在
+                const missingCols = FEATURE_COLUMNS.filter(col => !headers.includes(col));
+                if (missingCols.length > 0) {
+                    ElementPlus.ElMessage.error(`CSV缺少必要特征列：${missingCols.join(', ')}`);
+                    return;
+                }
+
+                // 获取各列索引
+                const colIndex = {};
+                headers.forEach((h, i) => colIndex[h] = i);
+
+                // 遍历数据行
+                let count = 0;
+                for (let i = 1; i < lines.length; i++) {
+                    const values = lines[i].split(',');
+                    if (values.length < headers.length) continue;
+
+                    // 提取14个特征值
+                    const features = FEATURE_COLUMNS.map(col => parseFloat(values[colIndex[col]]));
+                    
+                    // 校验数据有效性
+                    if (features.some(isNaN)) continue;
+
+                    // 生成样本名称：优先用unit和cycle，否则用行号
+                    let name;
+                    if (colIndex['unit'] !== undefined && colIndex['cycle'] !== undefined) {
+                        const unit = values[colIndex['unit']];
+                        const cycle = values[colIndex['cycle']];
+                        name = `设备${unit}-第${cycle}周期`;
+                    } else {
+                        name = `CSV样本-${i}`;
+                    }
+
+                    sampleLibrary.value.push({ name, features });
+                    count++;
+                }
+
+                if (count > 0) {
+                    // 自动选中第一个新导入的样本
+                    selectedSampleIndex.value = sampleLibrary.value.length - count;
+                    ElementPlus.ElMessage.success(`成功导入 ${count} 条样本数据`);
+                } else {
+                    ElementPlus.ElMessage.warning('未解析到有效数据行');
+                }
+            };
+
+            reader.readAsText(file, 'UTF-8');
+            return false; // 阻止默认上传行为
+        };
+
+        // ========== 手动添加样本 ==========
         const confirmAddSample = () => {
             if (!newSample.name.trim()) {
                 ElementPlus.ElMessage.warning('请输入样本名称');
                 return;
             }
-            // 解析文本：按逗号、空格、换行分割，过滤空值，转成数字
             const values = newSample.featuresText
                 .trim()
                 .split(/[\s,，\n]+/)
@@ -210,22 +285,19 @@ createApp({
                 return;
             }
 
-            // 添加到样本库
             sampleLibrary.value.push({
                 name: newSample.name.trim(),
                 features: values
             });
-            // 自动选中新添加的样本
             selectedSampleIndex.value = sampleLibrary.value.length - 1;
             
-            // 重置表单并关闭弹窗
             newSample.name = '';
             newSample.featuresText = '';
             addDialogVisible.value = false;
             ElementPlus.ElMessage.success('样本添加成功');
         };
 
-        // 故障诊断
+        // ========== 业务接口函数 ==========
         const runFaultDiagnose = async () => {
             if (currentFeatures.value.length !== 14) {
                 ElementPlus.ElMessage.error("样本特征数量不正确，应为14维");
@@ -243,7 +315,6 @@ createApp({
             ElementPlus.ElMessage.success("故障诊断完成");
         };
 
-        // 寿命预测
         const runRULPredict = async () => {
             if (currentFeatures.value.length !== 14) {
                 ElementPlus.ElMessage.error("样本特征数量不正确，应为14维");
@@ -261,7 +332,6 @@ createApp({
             ElementPlus.ElMessage.success("寿命预测完成");
         };
 
-        // 运维决策
         const runMaintenance = async () => {
             if (!faultResult.value || !rulResult.value) {
                 ElementPlus.ElMessage.warning("请先执行故障诊断和寿命预测");
@@ -283,7 +353,6 @@ createApp({
             ElementPlus.ElMessage.success("运维决策生成完成");
         };
 
-        // 加载历史记录
         const loadHistory = async () => {
             const res = await fetch(`${API_BASE}/api/maintenance/history`);
             historyList.value = await res.json();
@@ -300,6 +369,7 @@ createApp({
             deviceUnit, 
             addDialogVisible,
             newSample,
+            handleCsvUpload,
             confirmAddSample,
             faultResult, 
             rulResult, 
