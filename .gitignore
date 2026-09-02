@@ -1,0 +1,14 @@
+# 数据集，不上传GitHub
+data/raw/**
+data/processed/**
+
+# 模型输出缓存
+*.pkl
+*.csv
+
+# Python环境、缓存
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.log
