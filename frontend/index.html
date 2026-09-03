@@ -41,6 +41,7 @@
             align-items: end;
         }
         .filter-item { flex: 1; min-width: 180px; }
+        .filter-btn-group { display: flex; gap: 8px; }
 
         .demo-card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
         .result-item { margin: 10px 0; padding: 12px; background: #f8f9fa; border-radius: 4px; line-height: 1.8; }
@@ -124,8 +125,9 @@
                 </el-select>
             </el-form-item>
         </div>
-        <div class="filter-item">
+        <div class="filter-btn-group">
             <el-button @click="resetFilter">重置筛选</el-button>
+            <el-button type="primary" @click="runBatchAnalyze" :loading="isAnalyzing">批量分析</el-button>
         </div>
     </div>
 
@@ -269,7 +271,8 @@ const { createApp, ref, computed, onMounted, reactive, watch, nextTick } = Vue;
 // 14个特征列，与模型严格对应
 const FEATURE_COLUMNS = ['s2','s3','s4','s7','s8','s9','s11','s12','s13','s14','s15','s17','s20','s21'];
 const FEATURE_NAMES = ['s2','s3','s4','s7','s8','s9','s11','s12','s13','s14','s15','s17','s20','s21'];
-const CHUNK_SIZE = 50;
+const CHUNK_SIZE = 50; // CSV解析分片大小
+const BATCH_SIZE = 200; // 批量分析单批大小，越大越快但越容易卡
 const API_BASE = "http://localhost:8000";
 
 createApp({
@@ -411,49 +414,57 @@ createApp({
             return result;
         };
 
-        // ========== 批量预测核心函数（严格匹配后端格式） ==========
-        const batchPredict = async (samples) => {
-            if (samples.length === 0) return;
+        // ========== 分片批量分析核心函数 ==========
+        const runBatchAnalyze = async () => {
+            const samples = filteredSamples.value;
+            if (samples.length === 0) {
+                ElementPlus.ElMessage.warning('没有可分析的样本，请先导入CSV或添加样本');
+                return;
+            }
             isAnalyzing.value = true;
-
+            
             try {
-                // 提取特征二维数组
-                const items = samples.map(s => s.features);
+                for (let i = 0; i < samples.length; i += BATCH_SIZE) {
+                    const batch = samples.slice(i, i + BATCH_SIZE);
+                    const items = batch.map(s => s.features);
 
-                // 1. 批量故障诊断
-                const faultRes = await fetch(`${API_BASE}/api/fault/batch`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ items }) // 严格匹配后端 BatchRequest 格式
-                });
-                const faultData = await faultRes.json();
-                if (faultData.error) throw new Error(faultData.error);
+                    // 批量故障诊断
+                    const faultRes = await fetch(`${API_BASE}/api/fault/batch`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ items })
+                    });
+                    const faultData = await faultRes.json();
+                    if (faultData.error) throw new Error(faultData.error);
 
-                // 2. 批量寿命预测
-                const rulRes = await fetch(`${API_BASE}/api/rul/batch`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ items }) // 严格匹配后端 BatchRequest 格式
-                });
-                const rulData = await rulRes.json();
-                if (rulData.error) throw new Error(rulData.error);
+                    // 批量寿命预测
+                    const rulRes = await fetch(`${API_BASE}/api/rul/batch`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ items })
+                    });
+                    const rulData = await rulRes.json();
+                    if (rulData.error) throw new Error(rulData.error);
 
-                // 3. 回写结果到样本
-                samples.forEach((s, i) => {
-                    s.fault = faultData.labels[i];
-                    s.rul = Math.round(rulData.values[i] * 10) / 10;
-                    if (s.rul <= 30) s.risk = '高风险';
-                    else if (s.rul <= 60) s.risk = '中风险';
-                    else s.risk = '低风险';
-                });
+                    // 回写结果到对应样本
+                    batch.forEach((s, idx) => {
+                        const globalIdx = i + idx;
+                        samples[globalIdx].fault = faultData.labels[idx];
+                        samples[globalIdx].rul = Math.round(rulData.values[idx] * 10) / 10;
+                        samples[globalIdx].risk = 
+                            samples[globalIdx].rul <= 30 ? '高风险' :
+                            samples[globalIdx].rul <= 60 ? '中风险' : '低风险';
+                    });
 
-                ElementPlus.ElMessage.success(`批量分析完成，共 ${samples.length} 条样本`);
-
+                    // 每批释放一次主线程，避免页面卡死
+                    await nextTick();
+                }
+                ElementPlus.ElMessage.success(`批量分析完成，共处理 ${samples.length} 条样本`);
             } catch (e) {
                 ElementPlus.ElMessage.error('批量分析失败：' + e.message);
             } finally {
                 isAnalyzing.value = false;
-                nextTick(() => updateCharts());
+                updateCharts();
             }
         };
 
@@ -470,10 +481,7 @@ createApp({
                     sampleLibrary.value = sampleLibrary.value.concat(samples);
                     filterCycleRange.value = [1, maxCycle.value];
                     selectedFilterIndex.value = 0;
-                    ElementPlus.ElMessage.success(`成功导入 ${samples.length} 条样本`);
-                    
-                    // 导入完成后自动批量预测
-                    await batchPredict(samples);
+                    ElementPlus.ElMessage.success(`成功导入 ${samples.length} 条样本，点击「批量分析」开始计算`);
                 } else {
                     ElementPlus.ElMessage.warning('未解析到有效数据行');
                 }
@@ -529,9 +537,6 @@ createApp({
             newSample.featuresText = '';
             addDialogVisible.value = false;
             ElementPlus.ElMessage.success('样本添加成功');
-
-            // 对新样本单独预测
-            batchPredict([newItem]);
         };
 
         // ========== 图表相关 ==========
@@ -760,7 +765,9 @@ createApp({
             handleTabChange,
             diagnoseLoading,
             rulLoading,
-            maintLoading
+            maintLoading,
+            isAnalyzing,
+            runBatchAnalyze
         };
     }
 }).use(ElementPlus).mount('#app');
