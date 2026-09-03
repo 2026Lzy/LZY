@@ -1,742 +1,867 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>机械设备故障预测与运维决策系统</title>
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
-    <script src="https://unpkg.com/element-plus"></script>
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
-    <script src="./sample_data.js"></script>
-    <style>
-        * { box-sizing: border-box; }
-        body { margin: 0; background: #f5f7fa; font-family: "Microsoft YaHei", sans-serif; }
-        .container { max-width: 1280px; margin: 0 auto; padding: 20px; }
-        .header { text-align: center; margin-bottom: 12px; color: #303133; font-size: 22px; }
-        
-        /* 顶部控制栏 */
-        .control-bar { 
-            display: flex; 
-            justify-content: center; 
-            align-items: center;
-            gap: 20px; 
-            margin-bottom: 16px;
-            padding: 16px;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            flex-wrap: wrap;
-        }
-        .control-item { display: flex; align-items: center; gap: 8px; }
-
-        /* 筛选栏 */
-        .filter-bar {
-            display: flex;
-            gap: 16px;
-            padding: 16px;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            margin-bottom: 16px;
-            flex-wrap: wrap;
-            align-items: end;
-        }
-        .filter-item { flex: 1; min-width: 180px; }
-
-        .demo-card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
-        .result-item { margin: 10px 0; padding: 12px; background: #f8f9fa; border-radius: 4px; line-height: 1.8; }
-        .feature-input { width: 100%; min-height: 80px; font-family: Consolas, monospace; font-size: 13px; }
-        
-        /* 图表容器 */
-        .chart-row { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
-        .chart-box { flex: 1; min-width: 380px; height: 320px; background: white; border-radius: 8px; padding: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-        .chart-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; color: #303133; }
-        .chart-container { width: 100%; height: calc(100% - 28px); }
-
-        .stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
-        .stat-card { background: white; border-radius: 8px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); text-align: center; }
-        .stat-value { font-size: 24px; font-weight: 700; color: #409eff; }
-        .stat-label { font-size: 12px; color: #909399; margin-top: 4px; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>机械设备故障预测与运维决策系统</title>
+<link rel="stylesheet" href="https://unpkg.com/element-plus@2.7.8/dist/index.css">
+<link rel="stylesheet" href="https://unpkg.com/element-plus@2.7.8/theme-chalk/dark/css-vars.css">
+<style>
+  :root { --brand: #2f6fb0; --brand-dark: #1f4e82; --bg: #eef2f7; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    font-family: "Helvetica Neue", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+    color: #303133;
+  }
+  #app { min-height: 100vh; display: flex; flex-direction: column; }
+  .page-header {
+    background: linear-gradient(120deg, #1f4e82 0%, #2f6fb0 55%, #3d8bd0 100%);
+    color: #fff; padding: 16px 24px; box-shadow: 0 2px 8px rgba(31,78,130,.25);
+    position: sticky; top: 0; z-index: 20;
+  }
+  .page-header .head-row { display: flex; align-items: center; justify-content: space-between; }
+  .page-header h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: 1px; }
+  .page-header .sub { font-size: 12px; opacity: .85; margin-top: 4px; }
+  .backend-status { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #f56c6c; box-shadow: 0 0 6px rgba(245,108,108,.8); }
+  .dot.ok { background: #67c23a; box-shadow: 0 0 6px rgba(103,194,58,.8); }
+  .page-body { flex: 1; padding: 16px 20px 30px; max-width: 1600px; width: 100%; margin: 0 auto; }
+  .toolbar-card { border-radius: 10px; border: none; box-shadow: 0 1px 6px rgba(31,78,130,.08); }
+  .toolbar-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .toolbar-label { font-size: 13px; color: #606266; white-space: nowrap; display:flex; align-items:center; gap:4px;}
+  .toolbar-label .ico { font-size: 14px; }
+  .section-title { font-size: 14px; font-weight: 600; color: #1f4e82; margin: 0 0 10px; display:flex; align-items:center; gap:6px;}
+  .section-title::before { content:""; width:4px; height:14px; background:var(--brand); border-radius:2px; display:inline-block;}
+  .stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 14px 0; }
+  .stat-card { background:#fff; border-radius:10px; padding:14px 18px; box-shadow:0 1px 6px rgba(31,78,130,.08); display:flex; align-items:center; gap:14px;}
+  .stat-card .num { font-size: 26px; font-weight: 700; color:#1f4e82; line-height:1; }
+  .stat-card .num small { font-size: 13px; color:#909399; font-weight:400; }
+  .stat-card .lbl { font-size: 13px; color:#606266; margin-top:6px; }
+  .stat-card .ic { width:44px; height:44px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:22px; color:#fff; flex-shrink:0;}
+  .chart-box { width:100%; height:300px; }
+  .chart-box.tall { height: 360px; }
+  .card-title { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+  .empty-hint { color:#909399; font-size:12px; }
+  .result-card { border-radius:10px; border-left:4px solid var(--brand); background:#f5f8fc; padding:14px 16px; }
+  .result-card .big { font-size:30px; font-weight:700; color:var(--brand-dark); }
+  .result-tag-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; align-items:center;}
+  .el-tabs__item { font-weight:500; }
+  .el-tabs__item.is-active { color: var(--brand); }
+  .el-tabs__nav-wrap::after { height:1px; }
+  .btn-primary { background: var(--brand); border-color: var(--brand); }
+  .btn-primary:hover, .btn-primary:focus { background: #3d7ec2; border-color:#3d7ec2; }
+  .filter-line { display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin-bottom: 10px; }
+  .el-table { --el-table-header-bg-color:#f5f8fc; --el-table-header-text-color:#1f4e82; }
+  .device-chip { cursor:pointer; border-radius:16px; padding:4px 12px; border:1px solid #d5dee9; background:#fff; font-size:12px; color:#606266; transition: all .15s;}
+  .device-chip:hover { border-color:var(--brand); color:var(--brand); }
+  .device-chip.active { background:var(--brand); color:#fff; border-color:var(--brand); }
+  .feature-grid { display:grid; grid-template-columns: repeat(7, 1fr); gap:6px; }
+  .feature-item { background:#f5f8fc; border-radius:6px; padding:4px 6px; text-align:center; }
+  .feature-item .k { font-size:11px; color:#909399; }
+  .feature-item .v { font-size:12px; font-weight:600; color:#1f4e82; margin-top:2px; }
+  @media (max-width: 1100px){ .stat-cards { grid-template-columns: repeat(2,1fr);} .feature-grid{grid-template-columns:repeat(4,1fr);} }
+  .fade-enter-active,.fade-leave-active{transition:opacity .25s} .fade-enter-from,.fade-leave-to{opacity:0}
+</style>
 </head>
 <body>
-<div id="app" class="container">
-    <h2 class="header">基于多智能算法的机械设备故障预测与运维决策系统</h2>
-
-    <!-- 顶部控制面板 -->
-    <div class="control-bar">
-        <div class="control-item">
-            <span>设备编号：</span>
-            <el-input-number v-model="deviceUnit" :min="1" :max="100" style="width: 140px;"></el-input-number>
-        </div>
-        <div class="control-item">
-            <span>样本选择：</span>
-            <el-select 
-                v-model="selectedFilterIndex" 
-                style="width: 260px;"
-                virtual-scroll
-                :item-size="24"
-                :teleported="false"
-                placeholder="筛选后选择样本">
-                <el-option 
-                    v-for="(item, index) in filteredSamples" 
-                    :key="index" 
-                    :label="item.name" 
-                    :value="index">
-                </el-option>
-            </el-select>
-        </div>
-        <div class="control-item">
-            <el-upload 
-                :show-file-list="false" 
-                accept=".csv"
-                :before-upload="handleCsvUpload"
-                :disabled="isImporting"
-                action="">
-                <el-button type="success" plain :loading="isImporting">
-                    {{ importText }}
-                </el-button>
-            </el-upload>
-        </div>
-        <div class="control-item">
-            <el-button type="primary" plain @click="addDialogVisible = true">手动添加样本</el-button>
-        </div>
+<div id="app" v-cloak>
+  <!-- 顶部 -->
+  <header class="page-header">
+    <div class="head-row">
+      <div>
+        <h1>⚙️ 机械设备故障预测与运维决策系统</h1>
+        <div class="sub">制造智能技术课程设计 · B/S 架构演示 Demo · 数据驱动 智能运维</div>
+      </div>
+      <div class="backend-status">
+        <span class="dot" :class="{ok: backendOk}"></span>
+        <span>{{ backendOk ? '后端服务已连接' : '后端服务未连接（请通过 start.bat 启动）' }}</span>
+      </div>
     </div>
+  </header>
 
-    <!-- 筛选栏 -->
-    <div class="filter-bar">
-        <div class="filter-item">
-            <el-form-item label="设备编号筛选">
-                <el-select v-model="filterUnit" placeholder="全部设备" clearable style="width: 100%;">
-                    <el-option v-for="u in unitOptions" :key="u" :label="设备" + u" :value="u"></el-option>
-                </el-select>
-            </el-form-item>
-        </div>
-        <div class="filter-item">
-            <el-form-item label="周期范围">
-                <el-slider v-model="filterCycleRange" :min="1" :max="maxCycle" range style="width: 100%;"></el-slider>
-            </el-form-item>
-        </div>
-        <div class="filter-item">
-            <el-form-item label="风险等级">
-                <el-select v-model="filterRisk" placeholder="全部等级" clearable style="width: 100%;">
-                    <el-option label="高风险" value="高风险"></el-option>
-                    <el-option label="中风险" value="中风险"></el-option>
-                    <el-option label="低风险" value="低风险"></el-option>
-                </el-select>
-            </el-form-item>
-        </div>
-        <div class="filter-item">
-            <el-button @click="resetFilter">重置筛选</el-button>
-        </div>
-    </div>
+  <div class="page-body">
+    <!-- 数据筛选工具栏 -->
+    <el-card class="toolbar-card" shadow="never">
+      <div class="section-title">数据筛选</div>
+      <div class="toolbar-row">
+        <div class="toolbar-label"><span class="ico">🖥️</span> 设备编号</div>
+        <el-select v-model="filterUnit" placeholder="全部设备" clearable style="width:150px" size="default" @change="onFilterChange">
+          <el-option v-for="u in deviceOptions" :key="u.value" :label="u.label" :value="u.value"></el-option>
+        </el-select>
+
+        <div class="toolbar-label"><span class="ico">📅</span> 周期区间</div>
+        <el-input-number v-model="cycleFrom" :min="1" :max="cycleMax" :step="1" size="default" style="width:110px" @change="onFilterChange"></el-input-number>
+        <span style="color:#909399">—</span>
+        <el-input-number v-model="cycleTo" :min="1" :max="cycleMax" :step="1" size="default" style="width:110px" @change="onFilterChange"></el-input-number>
+        <el-slider v-model="cycleRange" range :min="1" :max="cycleMax" style="width:180px" @change="onSliderChange"></el-slider>
+
+        <div class="toolbar-label"><span class="ico">⚠️</span> 风险等级</div>
+        <el-select v-model="filterRisk" multiple collapse-tags placeholder="不限" style="width:180px" size="default" @change="onFilterChange">
+          <el-option label="高风险" value="高风险"></el-option><el-option label="中风险" value="中风险"></el-option><el-option label="低风险" value="低风险"></el-option>
+        </el-select>
+
+        <div class="toolbar-label"><span class="ico">🔧</span> 故障类型</div>
+        <el-select v-model="filterFault" multiple collapse-tags placeholder="不限" style="width:220px" size="default" @change="onFilterChange">
+          <el-option v-for="f in faultTypes" :key="f" :label="f" :value="f"></el-option>
+        </el-select>
+
+        <el-button size="default" @click="resetFilter">重置筛选</el-button>
+      </div>
+    </el-card>
 
     <!-- 统计卡片 -->
     <div class="stat-cards">
-        <div class="stat-card">
-            <div class="stat-value">{{ filteredSamples.length }}</div>
-            <div class="stat-label">筛选后样本数</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">{{ unitOptions.length }}</div>
-            <div class="stat-label">设备数量</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value" style="color:#f56c6c">{{ highRiskCount }}</div>
-            <div class="stat-label">高风险样本</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value" style="color:#e6a23c">{{ avgRul.toFixed(1) }}</div>
-            <div class="stat-label">平均剩余寿命</div>
-        </div>
+      <div class="stat-card">
+        <div class="ic" style="background:linear-gradient(135deg,#2f6fb0,#4a9ae0)">📊</div>
+        <div><div class="num">{{ stats.total }}<small> 条</small></div><div class="lbl">当前样本总数</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="ic" style="background:linear-gradient(135deg,#22a06b,#3ecf8e)">🖥️</div>
+        <div><div class="num">{{ stats.units }}<small> 台</small></div><div class="lbl">涉及设备数量</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="ic" style="background:linear-gradient(135deg,#e64545,#f07070)">🚨</div>
+        <div><div class="num">{{ stats.highRisk }}<small> 条</small></div><div class="lbl">高风险样本 (RUL≤30)</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="ic" style="background:linear-gradient(135deg,#e6a23c,#f0c060)">⏳</div>
+        <div><div class="num">{{ stats.avgRul }}<small> 周期</small></div><div class="lbl">平均剩余寿命</div></div>
+      </div>
     </div>
-    
-    <el-tabs v-model="activeTab" type="card" @tab-change="handleTabChange">
+
+    <!-- 诊断交互区 -->
+    <el-card class="toolbar-card" shadow="never" style="margin-bottom:14px">
+      <div class="section-title">样本选择与诊断</div>
+      <div class="toolbar-row">
+        <div class="toolbar-label"><span class="ico">🖥️</span> 诊断设备</div>
+        <el-select v-model="selUnit" placeholder="选择设备" style="width:160px" size="default" @change="onSelUnitChange">
+          <el-option v-for="u in deviceOptions" :key="u.value" :label="u.label" :value="u.value"></el-option>
+        </el-select>
+
+        <div class="toolbar-label"><span class="ico">📄</span> 样本周期</div>
+        <el-select-v2 v-model="selCycle" :options="sampleOptions" filterable placeholder="选择周期（可搜索）"
+                      style="width:230px" size="default" @change="onSelCycleChange"></el-select-v2>
+
+        <el-button type="primary" class="btn-primary" size="default" :loading="runLoading" @click="runAll">
+          ▶ 开始诊断
+        </el-button>
+        <el-button type="primary" plain size="default" :loading="diagLoading" @click="runDiagnose">故障诊断</el-button>
+        <el-button type="success" plain size="default" :loading="rulLoading" @click="runRul">寿命预测</el-button>
+        <el-button type="warning" plain size="default" :loading="optLoading" @click="runOptimize">运维决策</el-button>
+
+        <el-upload :show-file-list="false" :auto-upload="false" accept=".csv" :on-change="onImportCsv" style="margin-left:auto">
+          <el-button size="default" :loading="importing">📥 导入 CSV 样本</el-button>
+        </el-upload>
+        <el-button size="default" @click="manualDialog = true">✍️ 手动添加样本</el-button>
+      </div>
+    </el-card>
+
+    <!-- Tabs 主区域 -->
+    <el-card class="toolbar-card" shadow="never">
+      <el-tabs v-model="activeTab">
         <!-- 故障诊断 -->
-        <el-tab-pane label="故障诊断" name="fault">
-            <div class="demo-card">
-                <h3>智能故障分类诊断</h3>
-                <p>基于当前选中的传感器样本，输出故障状态与置信度</p>
-                <el-button type="primary" @click="runFaultDiagnose" :loading="diagnoseLoading" style="margin: 10px 0;">执行故障诊断</el-button>
-                <div v-if="faultResult" class="result-item">
-                    <p><strong>设备编号：</strong>{{ faultResult.unit }}</p>
-                    <p><strong>当前样本：</strong>{{ currentSample?.name }}</p>
-                    <p><strong>故障状态：</strong>
-                        <el-tag :type="faultResult.fault_label === 1 ? 'danger' : 'success'">
-                            {{ faultResult.fault_label === 1 ? '存在故障' : '正常' }}
-                        </el-tag>
-                    </p>
-                    <p><strong>置信度：</strong>{{ (faultResult.confidence * 100).toFixed(2) }}%</p>
+        <el-tab-pane label="故障诊断" name="diag">
+          <el-row :gutter="14">
+            <el-col :md="10">
+              <div class="card-title"><span class="section-title">诊断结果</span>
+                <span class="empty-hint" v-if="!diagResult">选择样本后点击「开始诊断」或「故障诊断」</span></div>
+              <el-empty v-if="!diagResult" description="暂无诊断结果" :image-size="80"></el-empty>
+              <div v-else class="result-card">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <div>
+                    <div style="font-size:12px;color:#909399">预测故障类型</div>
+                    <div class="big">{{ diagResult.fault_label }}</div>
+                  </div>
+                  <el-tag :type="diagResult.fault_label==='正常'?'success':'danger'" size="large" effect="dark"
+                          style="font-size:14px;padding:6px 14px">
+                    {{ diagResult.fault_label==='正常' ? '健康' : '异常' }}
+                  </el-tag>
                 </div>
-            </div>
+                <div class="result-tag-row">
+                  <span style="font-size:13px;color:#606266">置信度</span>
+                  <el-progress :percentage="Math.round(diagResult.confidence*100)" :stroke-width="12"
+                               :color="diagResult.confidence>=0.85 ? '#67c23a' : '#e6a23c'" style="width:180px"></el-progress>
+                  <b style="color:#1f4e82">{{ (diagResult.confidence*100).toFixed(1) }}%</b>
+                </div>
+                <div style="font-size:12px;color:#909399;margin-top:10px">
+                  设备 {{ diagResult.unit }} · 周期 {{ selCycle }} · 样本 {{ sampleOptions.length }} 条
+                </div>
+              </div>
+              <div class="card-title" style="margin-top:16px"><span class="section-title">当前样本传感器画像</span></div>
+              <div class="chart-box" id="chartRadar"></div>
+            </el-col>
+            <el-col :md="14">
+              <div class="card-title"><span class="section-title">故障类型分布</span>
+                <span class="empty-hint">基于当前筛选样本的模型预测结果</span></div>
+              <div class="chart-box" id="chartFault"></div>
+            </el-col>
+          </el-row>
         </el-tab-pane>
 
         <!-- 寿命预测 -->
         <el-tab-pane label="寿命预测" name="rul">
-            <div class="demo-card">
-                <h3>剩余使用寿命(RUL)预测</h3>
-                <p>基于传感器样本预测设备剩余运行周期</p>
-                <el-button type="primary" @click="runRULPredict" :loading="rulLoading" style="margin: 10px 0;">执行寿命预测</el-button>
-                <div v-if="rulResult" class="result-item">
-                    <p><strong>设备编号：</strong>{{ rulResult.unit }}</p>
-                    <p><strong>当前样本：</strong>{{ currentSample?.name }}</p>
-                    <p><strong>剩余寿命：</strong>{{ rulResult.rul_value }} 周期</p>
-                    <el-tag :type="rulResult.risk_level === '高风险' ? 'danger' : rulResult.risk_level === '中风险' ? 'warning' : 'success'">
-                        {{ rulResult.risk_level }}
-                    </el-tag>
+          <el-row :gutter="14">
+            <el-col :md="15">
+              <div class="card-title"><span class="section-title">剩余寿命 RUL 趋势</span>
+                <span class="empty-hint">设备 {{ selUnitLabel }} 各周期预测 RUL（阈值线：30 / 60）</span></div>
+              <div class="chart-box tall" id="chartRul"></div>
+            </el-col>
+            <el-col :md="9">
+              <div class="card-title"><span class="section-title">当前样本寿命预测</span></div>
+              <el-empty v-if="!rulResult" description="暂无预测结果" :image-size="70"></el-empty>
+              <div v-else class="result-card" :style="{borderLeftColor: riskColor(rulResult.risk_level)}">
+                <div style="font-size:12px;color:#909399">预测剩余寿命</div>
+                <div class="big">{{ rulResult.rul_value }} <small style="font-size:15px">周期</small></div>
+                <div class="result-tag-row">
+                  <el-tag :type="riskTag(rulResult.risk_level)" size="default" effect="dark">风险等级：{{ rulResult.risk_level }}</el-tag>
+                  <el-tag type="info" size="default" effect="plain">建议维护周期：{{ Math.max(1, Math.round(rulResult.rul_value*0.5)) }} 周期后</el-tag>
                 </div>
-            </div>
+                <div style="font-size:12px;color:#909399;margin-top:10px">
+                  <div>· RUL ≤ 30：高风险，需尽快检修</div>
+                  <div>· 30 &lt; RUL ≤ 60：中风险，纳入计划维护</div>
+                  <div>· RUL &gt; 60：低风险，常规监测</div>
+                </div>
+              </div>
+              <div class="card-title" style="margin-top:16px"><span class="section-title">风险等级分布</span></div>
+              <div class="chart-box" id="chartRisk"></div>
+            </el-col>
+          </el-row>
         </el-tab-pane>
 
         <!-- 运维决策 -->
-        <el-tab-pane label="运维决策" name="maintenance">
-            <div class="demo-card">
-                <h3>智能运维优化决策</h3>
-                <p>综合故障状态、剩余寿命、设备权重生成运维方案</p>
-                <el-button type="primary" @click="runMaintenance" :loading="maintLoading" style="margin: 10px 0;">生成运维决策</el-button>
-                <div v-if="maintResult" class="result-item">
-                    <p><strong>设备编号：</strong>{{ maintResult.unit }}</p>
-                    <p><strong>优先级分数：</strong>{{ maintResult.priority }}</p>
-                    <el-tag :type="maintResult.priority_level === '紧急' ? 'danger' : maintResult.priority_level === '重要' ? 'warning' : 'info'">
-                        {{ maintResult.priority_level }}
-                    </el-tag>
-                    <p><strong>运维建议：</strong>{{ maintResult.suggestion }}</p>
-                    <p><strong>备件建议：</strong>{{ maintResult.spare_parts }}</p>
+        <el-tab-pane label="运维决策" name="opt">
+          <el-row :gutter="14">
+            <el-col :md="14">
+              <div class="card-title"><span class="section-title">决策输出</span>
+                <span class="empty-hint" v-if="!optResult">基于诊断与寿命结果生成维护决策</span></div>
+              <el-empty v-if="!optResult" description="暂无决策结果，请先运行诊断" :image-size="80"></el-empty>
+              <div v-else class="result-card" :style="{borderLeftColor: levelColor(optResult.priority_level)}">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+                  <div>
+                    <div style="font-size:12px;color:#909399">维护优先级评分</div>
+                    <div class="big">{{ optResult.priority }}<small style="font-size:15px"> / 100</small></div>
+                  </div>
+                  <el-tag :type="levelTag(optResult.priority_level)" size="large" effect="dark" style="font-size:14px;padding:6px 14px">
+                    优先级：{{ optResult.priority_level }}
+                  </el-tag>
                 </div>
-            </div>
-        </el-tab-pane>
-
-        <!-- 数据分析 -->
-        <el-tab-pane label="数据分析" name="analysis">
-            <div class="chart-row">
-                <div class="chart-box">
-                    <div class="chart-title">故障状态分布</div>
-                    <div ref="faultChartRef" class="chart-container"></div>
+                <el-progress :percentage="Math.round(optResult.priority)" :stroke-width="14"
+                             :color="levelColor(optResult.priority_level)" style="margin-top:10px"></el-progress>
+                <div style="margin-top:14px;font-size:14px;color:#303133;line-height:1.7">
+                  <b>运维建议：</b>{{ optResult.suggestion }}
                 </div>
-                <div class="chart-box">
-                    <div class="chart-title">风险等级分布</div>
-                    <div ref="riskChartRef" class="chart-container"></div>
+                <div v-if="optResult.spare_parts && optResult.spare_parts.length" style="margin-top:12px">
+                  <b style="font-size:13px">📦 建议备件：</b>
+                  <el-tag v-for="p in optResult.spare_parts" :key="p" size="small" style="margin-right:6px" effect="plain">{{ p }}</el-tag>
                 </div>
-            </div>
-            <div class="chart-row">
-                <div class="chart-box" style="min-width: 600px;">
-                    <div class="chart-title">当前样本传感器特征雷达图</div>
-                    <div ref="radarChartRef" class="chart-container"></div>
-                </div>
-            </div>
+              </div>
+            </el-col>
+            <el-col :md="10">
+              <div class="section-title">决策依据</div>
+              <el-descriptions :column="1" border size="small">
+                <el-descriptions-item label="设备编号">{{ selUnitLabel || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="诊断故障">{{ diagResult ? diagResult.fault_label : '-' }}</el-descriptions-item>
+                <el-descriptions-item label="故障置信度">{{ diagResult ? (diagResult.confidence*100).toFixed(1)+'%' : '-' }}</el-descriptions-item>
+                <el-descriptions-item label="剩余寿命">{{ rulResult ? rulResult.rul_value + ' 周期' : '-' }}</el-descriptions-item>
+                <el-descriptions-item label="风险等级">{{ rulResult ? rulResult.risk_level : '-' }}</el-descriptions-item>
+                <el-descriptions-item label="设备重要度">
+                  <el-radio-group v-model="deviceWeight" size="small">
+                    <el-radio-button :label="1.15">关键</el-radio-button>
+                    <el-radio-button :label="1.0">一般</el-radio-button>
+                    <el-radio-button :label="0.85">非关键</el-radio-button>
+                  </el-radio-group>
+                </el-descriptions-item>
+              </el-descriptions>
+              <el-alert type="info" :closable="false" style="margin-top:10px"
+                title="说明：优先级评分综合故障严重度、剩余寿命与设备重要度生成，分数越高越需优先维护。"></el-alert>
+            </el-col>
+          </el-row>
         </el-tab-pane>
 
         <!-- 历史记录 -->
         <el-tab-pane label="历史记录" name="history">
-            <div class="demo-card">
-                <h3>运维决策历史记录</h3>
-                <el-table :data="historyList" border style="width: 100%">
-                    <el-table-column prop="unit" label="设备编号" width="80"></el-table-column>
-                    <el-table-column prop="priority_level" label="优先级" width="80"></el-table-column>
-                    <el-table-column prop="suggestion" label="运维建议"></el-table-column>
-                    <el-table-column prop="create_time" label="时间" width="180"></el-table-column>
-                </el-table>
-            </div>
+          <div class="filter-line">
+            <div class="toolbar-label"><span class="ico">⚠️</span> 风险等级</div>
+            <el-select v-model="hisRisk" multiple collapse-tags placeholder="全部" style="width:180px" size="small">
+              <el-option label="高风险" value="高风险"></el-option><el-option label="中风险" value="中风险"></el-option><el-option label="低风险" value="低风险"></el-option>
+            </el-select>
+            <div class="toolbar-label"><span class="ico">🎯</span> 优先级</div>
+            <el-select v-model="hisPriority" multiple collapse-tags placeholder="全部" style="width:180px" size="small">
+              <el-option label="紧急" value="紧急"></el-option><el-option label="高" value="高"></el-option><el-option label="中" value="中"></el-option><el-option label="低" value="低"></el-option>
+            </el-select>
+            <el-button size="small" type="warning" plain @click="clearHistory">清空记录</el-button>
+            <span class="empty-hint">共 {{ filteredHistory.length }} 条记录</span>
+          </div>
+          <el-table :data="filteredHistory" border stripe size="small" max-height="460" empty-text="暂无历史记录，运行「运维决策」后自动生成">
+            <el-table-column prop="create_time" label="生成时间" width="150"></el-table-column>
+            <el-table-column prop="unit" label="设备编号" width="100"></el-table-column>
+            <el-table-column prop="fault_label" label="故障类型" width="110">
+              <template #default="{row}">
+                <el-tag :type="row.fault_label==='正常'?'success':'danger'" size="small">{{ row.fault_label }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="rul" label="RUL" width="80"></el-table-column>
+            <el-table-column prop="risk_level" label="风险等级" width="90">
+              <template #default="{row}"><el-tag :type="riskTag(row.risk_level)" size="small">{{ row.risk_level }}</el-tag></template>
+            </el-table-column>
+            <el-table-column prop="priority" label="优先级分" width="90">
+              <template #default="{row}"><b style="color:#1f4e82">{{ row.priority }}</b></template>
+            </el-table-column>
+            <el-table-column prop="priority_level" label="优先级" width="80">
+              <template #default="{row}"><el-tag :type="levelTag(row.priority_level)" size="small">{{ row.priority_level }}</el-tag></template>
+            </el-table-column>
+            <el-table-column prop="suggestion" label="运维建议" min-width="260" show-overflow-tooltip></el-table-column>
+            <el-table-column label="操作" width="70" fixed="right">
+              <template #default="{row}"><el-button link type="danger" size="small" @click="deleteHistory(row.id)">删除</el-button></template>
+            </el-table-column>
+          </el-table>
         </el-tab-pane>
-    </el-tabs>
+      </el-tabs>
+    </el-card>
+  </div>
 
-    <!-- 手动添加样本弹窗 -->
-    <el-dialog v-model="addDialogVisible" title="手动添加样本" width="500px">
-        <el-form label-width="100px">
-            <el-form-item label="样本名称">
-                <el-input v-model="newSample.name" placeholder="例如：设备3-第50周期-故障状态"></el-input>
-            </el-form-item>
-            <el-form-item label="特征数据">
-                <el-input 
-                    v-model="newSample.featuresText" 
-                    type="textarea" 
-                    class="feature-input"
-                    placeholder="粘贴14个传感器数值，支持逗号、空格或换行分隔&#10;顺序必须对应：s2 s3 s4 s7 s8 s9 s11 s12 s13 s14 s15 s17 s20 s21">
-                </el-input>
-                <div style="font-size: 12px; color: #909399; margin-top: 4px;">
-                    从 test.csv 复制对应行的14个传感器值粘贴进来即可
-                </div>
-            </el-form-item>
-        </el-form>
-        <template #footer>
-            <el-button @click="addDialogVisible = false">取消</el-button>
-            <el-button type="primary" @click="confirmAddSample">确认添加</el-button>
-        </template>
-    </el-dialog>
+  <!-- 手动添加样本弹窗 -->
+  <el-dialog v-model="manualDialog" title="手动添加样本" width="640px" destroy-on-close>
+    <el-form label-width="80px" size="small">
+      <el-row :gutter="12">
+        <el-col :span="12"><el-form-item label="设备编号"><el-input-number v-model="manual.unit" :min="1" :max="99" style="width:100%"></el-input-number></el-form-item></el-col>
+        <el-col :span="12"><el-form-item label="运行周期"><el-input-number v-model="manual.cycle" :min="1" :max="500" style="width:100%"></el-input-number></el-form-item></el-col>
+      </el-row>
+      <div class="section-title" style="margin:6px 0">14 维特征值</div>
+      <div class="feature-grid">
+        <div class="feature-item" v-for="(s, i) in featureNames" :key="s">
+          <div class="k">{{ s }}</div>
+          <el-input v-model="manual.feats[i]" size="small" placeholder="0.0"></el-input>
+        </div>
+      </div>
+    </el-form>
+    <template #footer>
+      <el-button size="small" @click="manualDialog=false">取消</el-button>
+      <el-button type="primary" class="btn-primary" size="small" @click="addManualSample">添加</el-button>
+    </template>
+  </el-dialog>
 </div>
 
+<!-- CDN 依赖 -->
+<script src="https://unpkg.com/vue@3.4.21/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/dayjs@1.11.10/dayjs.min.js"></script>
+<script src="https://unpkg.com/element-plus@2.7.8/dist/index.full.min.js"></script>
+<script src="https://unpkg.com/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="./sample-data.js"></script>
 <script>
-const { createApp, ref, computed, onMounted, reactive, watch, nextTick } = Vue;
+const { createApp, ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } = Vue;
 
-// 14个特征列，顺序严格对应模型输入
-const FEATURE_COLUMNS = ['s2','s3','s4','s7','s8','s9','s11','s12','s13','s14','s15','s17','s20','s21'];
-const FEATURE_NAMES = ['s2','s3','s4','s7','s8','s9','s11','s12','s13','s14','s15','s17','s20','s21'];
-// 每批解析行数，越小越流畅
-const CHUNK_SIZE = 50;
-const API_BASE = "http://localhost:8000";
+const API_BASE = location.protocol.indexOf('http') === 0 ? location.origin : 'http://localhost:8000';
+const FEATURES = ['s2','s3','s4','s7','s8','s9','s11','s12','s13','s14','s15','s17','s20','s21'];
+const FAULT_TYPES = ['正常','轴承退化','叶片腐蚀','热通道退化','润滑不良'];
+const PALETTE = ['#2f6fb0','#e64545','#e6a23c','#22a06b','#8a6de9','#5bc0eb','#f07070','#f0c060','#67c23a','#909399'];
+const RISK_COLOR = {'高风险':'#e64545','中风险':'#e6a23c','低风险':'#22a06b'};
 
-createApp({
-    setup() {
-        const activeTab = ref('fault');
-        const addDialogVisible = ref(false);
-        const isImporting = ref(false);
-        const importProgress = ref(0);
-        const diagnoseLoading = ref(false);
-        const rulLoading = ref(false);
-        const maintLoading = ref(false);
+// ---------- 轻量请求封装 ----------
+async function postJSON(url, body) {
+  const r = await fetch(API_BASE + url, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+  });
+  if (!r.ok) { const t = await r.text().catch(()=>''); throw new Error('请求失败 ' + r.status + ' ' + t); }
+  return r.json();
+}
+async function getJSON(url) {
+  const r = await fetch(API_BASE + url);
+  if (!r.ok) throw new Error('请求失败 ' + r.status);
+  return r.json();
+}
 
-        // 图表引用
-        const faultChartRef = ref(null);
-        const riskChartRef = ref(null);
-        const radarChartRef = ref(null);
-        let faultChart = null;
-        let riskChart = null;
-        let radarChart = null;
+const app = createApp({
+  setup() {
+    const backendOk = ref(false);
+    const samples = ref([]);          // [{unit, cycle, f:[14]}]
+    const units = ref({});            // {unit: {cycles, fault_label}}
+    const deviceOptions = ref([]);
+    const faultTypes = FAULT_TYPES;
 
-        // 样本库
-        const sampleLibrary = ref(window.SAMPLE_LIBRARY || [
-            { name: "样本1 - 正常健康状态", features: [-0.812, -0.534, -0.678, 0.945, -0.421, -0.756, -0.312, 0.823, -0.601, -0.547, -0.418, -0.835, 0.912, 0.734], unit: 1, cycle: 1, rul: 125, risk: '低风险', fault: 0 },
-            { name: "样本2 - 早期退化状态", features: [0.215, 0.108, -0.123, 0.342, -0.207, 0.116, 0.221, 0.513, -0.109, 0.014, 0.125, -0.318, 0.427, 0.209], unit: 1, cycle: 60, rul: 70, risk: '中风险', fault: 0 },
-            { name: "样本3 - 严重故障状态", features: [1.823, 1.546, 1.237, -1.512, 1.634, 1.325, 1.741, -1.218, 1.429, 1.136, 1.542, -1.815, -1.237, -1.628], unit: 1, cycle: 120, rul: 15, risk: '高风险', fault: 1 }
-        ]);
+    // 筛选
+    const filterUnit = ref(null);
+    const cycleMin = ref(1), cycleMax = ref(100);
+    const cycleFrom = ref(1), cycleTo = ref(100);
+    const cycleRange = ref([1, 100]);
+    const filterRisk = ref([]);
+    const filterFault = ref([]);
 
-        // 筛选条件
-        const filterUnit = ref(null);
-        const filterCycleRange = ref([1, 200]);
-        const filterRisk = ref(null);
+    // 样本选择
+    const selUnit = ref(null);
+    const selCycle = ref(null);
+    const sampleOptions = ref([]);
+    const selSample = computed(() => {
+      if (selUnit.value == null || selCycle.value == null) return null;
+      return samples.value.find(s => s.unit === selUnit.value && s.cycle === selCycle.value) || null;
+    });
+    const selUnitLabel = computed(() => {
+      const d = deviceOptions.value.find(o => o.value === selUnit.value);
+      return d ? d.label : '';
+    });
 
-        // 设备编号
-        const deviceUnit = ref(1);
-        const selectedFilterIndex = ref(0);
+    // 结果
+    const diagResult = ref(null), rulResult = ref(null), optResult = ref(null);
+    const deviceWeight = ref(1.0);
+    const runLoading = ref(false), diagLoading = ref(false), rulLoading = ref(false), optLoading = ref(false);
+    const importing = ref(false);
+    const activeTab = ref('diag');
 
-        // 手动添加表单
-        const newSample = reactive({
-            name: '',
-            featuresText: ''
-        });
+    // 统计
+    const stats = reactive({ total: 0, units: 0, highRisk: 0, avgRul: 0 });
+    let enrichedAll = [];   // 带 fault/rul 的当前筛选样本
 
-        // 业务结果
-        const faultResult = ref(null);
-        const rulResult = ref(null);
-        const maintResult = ref(null);
-        const historyList = ref([]);
+    // 历史
+    const history = ref([]);
+    const hisRisk = ref([]), hisPriority = ref([]);
+    const filteredHistory = computed(() => history.value.filter(h =>
+      (hisRisk.value.length === 0 || hisRisk.value.includes(h.risk_level)) &&
+      (hisPriority.value.length === 0 || hisPriority.value.includes(h.priority_level))));
 
-        // ========== 计算属性 ==========
-        // 所有设备编号选项
-        const unitOptions = computed(() => {
-            const units = new Set(sampleLibrary.value.map(s => s.unit).filter(u => u != null));
-            return Array.from(units).sort((a,b) => a-b);
-        });
+    // 图表
+    const charts = {};
+    let debTimer = null;
 
-        // 最大周期
-        const maxCycle = computed(() => {
-            const cycles = sampleLibrary.value.map(s => s.cycle || 1);
-            return Math.max(...cycles, 100);
-        });
-
-        // 筛选后的样本
-        const filteredSamples = computed(() => {
-            return sampleLibrary.value.filter(s => {
-                if (filterUnit.value != null && s.unit !== filterUnit.value) return false;
-                if (s.cycle != null && (s.cycle < filterCycleRange.value[0] || s.cycle > filterCycleRange.value[1])) return false;
-                if (filterRisk.value && s.risk !== filterRisk.value) return false;
-                return true;
-            });
-        });
-
-        // 当前选中的样本
-        const currentSample = computed(() => {
-            return filteredSamples.value[selectedFilterIndex.value] || sampleLibrary.value[0];
-        });
-
-        // 高风险数量
-        const highRiskCount = computed(() => {
-            return filteredSamples.value.filter(s => s.risk === '高风险').length;
-        });
-
-        // 平均RUL
-        const avgRul = computed(() => {
-            const list = filteredSamples.value.filter(s => s.rul != null);
-            if (list.length === 0) return 0;
-            return list.reduce((sum, s) => sum + s.rul, 0) / list.length;
-        });
-
-        // 导入按钮文字
-        const importText = computed(() => {
-            if (!isImporting.value) return '导入CSV样本';
-            return `导入中 ${importProgress.value}%`;
-        });
-
-        // ========== 工具函数 ==========
-        const sleep = (ms = 0) => new Promise(resolve => setTimeout(resolve, ms));
-
-        // ========== CSV异步分片解析 ==========
-        const parseCsvAsync = async (text) => {
-            // 去除UTF-8 BOM头
-            if (text.charCodeAt(0) === 0xFEFF) {
-                text = text.slice(1);
-            }
-            
-            const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
-            if (lines.length < 2) return [];
-
-            const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-            const missingCols = FEATURE_COLUMNS.filter(col => !headers.includes(col));
-            if (missingCols.length > 0) {
-                ElementPlus.ElMessage.error(`CSV缺少必要特征列：${missingCols.join(', ')}`);
-                return [];
-            }
-
-            const colIndex = {};
-            headers.forEach((h, i) => colIndex[h] = i);
-
-            const result = [];
-            const total = lines.length - 1;
-
-            for (let i = 1; i < lines.length; i += CHUNK_SIZE) {
-                const end = Math.min(i + CHUNK_SIZE, lines.length);
-                
-                for (let j = i; j < end; j++) {
-                    const values = lines[j].split(',');
-                    if (values.length < headers.length) continue;
-
-                    const features = FEATURE_COLUMNS.map(col => parseFloat(values[colIndex[col]]));
-                    if (features.some(isNaN)) continue;
-
-                    const unit = colIndex['unit'] !== undefined ? parseInt(values[colIndex['unit']]) : null;
-                    const cycle = colIndex['cycle'] !== undefined ? parseInt(values[colIndex['cycle']]) : j;
-                    const rul = colIndex['rul'] !== undefined ? parseInt(values[colIndex['rul']]) : null;
-                    const fault = colIndex['fault'] !== undefined ? parseInt(values[colIndex['fault']]) : 0;
-                    
-                    let risk = '低风险';
-                    if (rul != null) {
-                        if (rul <= 30) risk = '高风险';
-                        else if (rul <= 60) risk = '中风险';
-                    }
-
-                    const name = unit != null ? `设备${unit}-第${cycle}周期` : `CSV样本-${j}`;
-
-                    result.push({ name, features, unit, cycle, rul, fault, risk });
-                }
-
-                importProgress.value = Math.round((end - 1) / total * 100);
-                await sleep();
-            }
-
-            return result;
-        };
-
-        // ========== CSV上传 ==========
-        const handleCsvUpload = (file) => {
-            isImporting.value = true;
-            importProgress.value = 0;
-
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                const samples = await parseCsvAsync(e.target.result);
-                
-                if (samples.length > 0) {
-                    sampleLibrary.value = sampleLibrary.value.concat(samples);
-                    // 更新筛选周期范围
-                    filterCycleRange.value = [1, maxCycle.value];
-                    selectedFilterIndex.value = 0;
-                    ElementPlus.ElMessage.success(`成功导入 ${samples.length} 条样本`);
-                    nextTick(() => updateCharts());
-                } else {
-                    ElementPlus.ElMessage.warning('未解析到有效数据行');
-                }
-
-                isImporting.value = false;
-                importProgress.value = 0;
-            };
-
-            reader.onerror = () => {
-                ElementPlus.ElMessage.error('文件读取失败');
-                isImporting.value = false;
-            };
-
-            reader.readAsText(file, 'UTF-8');
-            return false;
-        };
-
-        // ========== 手动添加样本 ==========
-        const confirmAddSample = () => {
-            if (!newSample.name.trim()) {
-                ElementPlus.ElMessage.warning('请输入样本名称');
-                return;
-            }
-            const values = newSample.featuresText
-                .trim()
-                .split(/[\s,，\n]+/)
-                .filter(v => v !== '')
-                .map(v => parseFloat(v));
-            
-            if (values.length !== 14) {
-                ElementPlus.ElMessage.error(`特征数量错误，需要14个数值，当前解析到${values.length}个`);
-                return;
-            }
-            if (values.some(isNaN)) {
-                ElementPlus.ElMessage.error('存在无法识别的数字，请检查数据格式');
-                return;
-            }
-
-            sampleLibrary.value.push({
-                name: newSample.name.trim(),
-                features: values,
-                unit: deviceUnit.value,
-                cycle: 1,
-                rul: null,
-                fault: 0,
-                risk: '低风险'
-            });
-            
-            selectedFilterIndex.value = filteredSamples.value.length - 1;
-            newSample.name = '';
-            newSample.featuresText = '';
-            addDialogVisible.value = false;
-            ElementPlus.ElMessage.success('样本添加成功');
-            nextTick(() => updateCharts());
-        };
-
-        // ========== 图表相关 ==========
-        const initCharts = () => {
-            if (faultChartRef.value) {
-                faultChart = echarts.init(faultChartRef.value);
-            }
-            if (riskChartRef.value) {
-                riskChart = echarts.init(riskChartRef.value);
-            }
-            if (radarChartRef.value) {
-                radarChart = echarts.init(radarChartRef.value);
-            }
-            updateCharts();
-        };
-
-        const updateCharts = () => {
-            const data = filteredSamples.value;
-            if (data.length === 0) return;
-
-            // 故障分布饼图
-            if (faultChart) {
-                const normal = data.filter(s => s.fault === 0).length;
-                const fault = data.filter(s => s.fault === 1).length;
-                faultChart.setOption({
-                    tooltip: { trigger: 'item' },
-                    series: [{
-                        type: 'pie',
-                        radius: ['40%', '70%'],
-                        data: [
-                            { value: normal, name: '正常', itemStyle: { color: '#67c23a' } },
-                            { value: fault, name: '故障', itemStyle: { color: '#f56c6c' } }
-                        ],
-                        label: { formatter: '{b}: {c} ({d}%)' }
-                    }]
-                });
-            }
-
-            // 风险分布饼图
-            if (riskChart) {
-                const high = data.filter(s => s.risk === '高风险').length;
-                const mid = data.filter(s => s.risk === '中风险').length;
-                const low = data.filter(s => s.risk === '低风险').length;
-                riskChart.setOption({
-                    tooltip: { trigger: 'item' },
-                    series: [{
-                        type: 'pie',
-                        radius: ['40%', '70%'],
-                        data: [
-                            { value: high, name: '高风险', itemStyle: { color: '#f56c6c' } },
-                            { value: mid, name: '中风险', itemStyle: { color: '#e6a23c' } },
-                            { value: low, name: '低风险', itemStyle: { color: '#67c23a' } }
-                        ],
-                        label: { formatter: '{b}: {c} ({d}%)' }
-                    }]
-                });
-            }
-
-            // 传感器雷达图
-            if (radarChart && currentSample.value) {
-                radarChart.setOption({
-                    tooltip: {},
-                    radar: {
-                        indicator: FEATURE_NAMES.map(name => ({ name, max: 2, min: -2 })),
-                        radius: '70%'
-                    },
-                    series: [{
-                        type: 'radar',
-                        data: [{
-                            value: currentSample.value.features,
-                            name: currentSample.value.name,
-                            areaStyle: { opacity: 0.3 },
-                            lineStyle: { color: '#409eff' },
-                            itemStyle: { color: '#409eff' }
-                        }]
-                    }]
-                });
-            }
-        };
-
-        // Tab切换时重绘图表
-        const handleTabChange = () => {
-            nextTick(() => {
-                faultChart?.resize();
-                riskChart?.resize();
-                radarChart?.resize();
-            });
-        };
-
-        // ========== 业务接口 ==========
-        const runFaultDiagnose = async () => {
-            if (!currentSample.value || currentSample.value.features.length !== 14) {
-                ElementPlus.ElMessage.error("请选择有效的样本");
-                return;
-            }
-            diagnoseLoading.value = true;
-            try {
-                const res = await fetch(`${API_BASE}/api/fault/predict`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ 
-                        features: currentSample.value.features, 
-                        unit: deviceUnit.value 
-                    })
-                });
-                faultResult.value = await res.json();
-                ElementPlus.ElMessage.success("故障诊断完成");
-            } catch(e) {
-                ElementPlus.ElMessage.error("请求失败，请检查后端是否启动");
-            }
-            diagnoseLoading.value = false;
-        };
-
-        const runRULPredict = async () => {
-            if (!currentSample.value || currentSample.value.features.length !== 14) {
-                ElementPlus.ElMessage.error("请选择有效的样本");
-                return;
-            }
-            rulLoading.value = true;
-            try {
-                const res = await fetch(`${API_BASE}/api/rul/predict`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ 
-                        features: currentSample.value.features, 
-                        unit: deviceUnit.value 
-                    })
-                });
-                rulResult.value = await res.json();
-                ElementPlus.ElMessage.success("寿命预测完成");
-            } catch(e) {
-                ElementPlus.ElMessage.error("请求失败，请检查后端是否启动");
-            }
-            rulLoading.value = false;
-        };
-
-        const runMaintenance = async () => {
-            if (!faultResult.value || !rulResult.value) {
-                ElementPlus.ElMessage.warning("请先执行故障诊断和寿命预测");
-                return;
-            }
-            maintLoading.value = true;
-            try {
-                const res = await fetch(`${API_BASE}/api/maintenance/optimize`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        unit: deviceUnit.value,
-                        fault_label: faultResult.value.fault_label,
-                        fault_confidence: faultResult.value.confidence,
-                        rul: rulResult.value.rul_value,
-                        device_weight: 0.6
-                    })
-                });
-                maintResult.value = await res.json();
-                loadHistory();
-                ElementPlus.ElMessage.success("运维决策生成完成");
-            } catch(e) {
-                ElementPlus.ElMessage.error("请求失败，请检查后端是否启动");
-            }
-            maintLoading.value = false;
-        };
-
-        const loadHistory = async () => {
-            try {
-                const res = await fetch(`${API_BASE}/api/maintenance/history`);
-                historyList.value = await res.json();
-            } catch(e) {}
-        };
-
-        // 重置筛选
-        const resetFilter = () => {
-            filterUnit.value = null;
-            filterCycleRange.value = [1, maxCycle.value];
-            filterRisk.value = null;
-            selectedFilterIndex.value = 0;
-        };
-
-        // 监听筛选变化更新图表
-        watch([filterUnit, filterCycleRange, filterRisk], () => {
-            selectedFilterIndex.value = 0;
-            nextTick(() => updateCharts());
-        });
-
-        // 监听选中样本变化更新雷达图
-        watch(selectedFilterIndex, () => {
-            if (activeTab.value === 'analysis') {
-                updateCharts();
-            }
-        });
-
-        onMounted(() => {
-            loadHistory();
-            nextTick(() => {
-                initCharts();
-                window.addEventListener('resize', () => {
-                    faultChart?.resize();
-                    riskChart?.resize();
-                    radarChart?.resize();
-                });
-            });
-        });
-
-        return {
-            activeTab,
-            deviceUnit,
-            sampleLibrary,
-            filteredSamples,
-            selectedFilterIndex,
-            isImporting,
-            importText,
-            addDialogVisible,
-            newSample,
-            filterUnit,
-            filterCycleRange,
-            filterRisk,
-            unitOptions,
-            maxCycle,
-            highRiskCount,
-            avgRul,
-            faultResult,
-            rulResult,
-            maintResult,
-            historyList,
-            faultChartRef,
-            riskChartRef,
-            radarChartRef,
-            handleCsvUpload,
-            confirmAddSample,
-            runFaultDiagnose,
-            runRULPredict,
-            runMaintenance,
-            resetFilter,
-            handleTabChange,
-            diagnoseLoading,
-            rulLoading,
-            maintLoading
-        };
+    // ---------- 数据加载 ----------
+    function setData(smp, unt) {
+      samples.value = smp;
+      units.value = unt;
+      const devs = Object.keys(unt).map(Number).sort((a,b)=>a-b);
+      deviceOptions.value = devs.map(u => ({ value: u, label: 'DEV-' + String(u).padStart(2,'0') }));
+      // 数据变更后重置筛选条件，避免旧条件（设备/风险/故障）误过滤新数据集
+      filterUnit.value = null;
+      filterRisk.value = [];
+      filterFault.value = [];
+      // 周期范围
+      const cs = smp.map(s => s.cycle);
+      const mn = Math.min.apply(null, cs), mx = Math.max.apply(null, cs);
+      cycleMin.value = mn; cycleMax.value = mx;
+      cycleFrom.value = mn; cycleTo.value = mx;
+      cycleRange.value = [mn, mx];
+      if (devs.length) {
+        if (selUnit.value == null || !devs.includes(selUnit.value)) selUnit.value = devs[0];
+        onSelUnitChange();
+      } else {
+        sampleOptions.value = []; selUnit.value = null; selCycle.value = null;
+      }
+      refreshAnalysis();
     }
-}).use(ElementPlus).mount('#app');
+
+    function loadBundled() {
+      if (window.__SAMPLE_DATA__ && window.__SAMPLE_DATA__.samples) {
+        const d = window.__SAMPLE_DATA__;
+        const unt = {};
+        Object.keys(d.units).forEach(k => { unt[Number(k)] = d.units[k]; });
+        const smp = d.samples.map(r => ({ unit: r[0], cycle: r[1], f: r.slice(2) }));
+        setData(smp, unt);
+        Vue.$msg && Vue.$msg.success('已加载内置样本数据 ' + smp.length + ' 条');
+      }
+    }
+
+    // ---------- 样本下拉 ----------
+    function updateSampleOptions() {
+      if (selUnit.value == null) { sampleOptions.value = []; selCycle.value = null; return; }
+      const list = samples.value.filter(s => s.unit === selUnit.value).map(s => s.cycle).sort((a,b)=>a-b);
+      sampleOptions.value = list.map(c => ({ value: c, label: '周期 ' + c + '（' + (units.value[selUnit.value]?.fault_label||'') + '）' }));
+      if (!list.includes(selCycle.value)) selCycle.value = list[list.length - 1];
+    }
+    function onSelUnitChange() {
+      updateSampleOptions();
+      refreshRulTrend();
+      renderRadar();
+    }
+    function onSelCycleChange() { renderRadar(); }
+
+    // ---------- 筛选 ----------
+    function onFilterChange() {
+      if (cycleFrom.value > cycleTo.value) { const t = cycleFrom.value; cycleFrom.value = cycleTo.value; cycleTo.value = t; }
+      cycleRange.value = [cycleFrom.value, cycleTo.value];
+      refreshAnalysis();
+    }
+    function onSliderChange(v) { cycleFrom.value = v[0]; cycleTo.value = v[1]; refreshAnalysis(); }
+    function resetFilter() {
+      filterUnit.value = null; filterRisk.value = []; filterFault.value = [];
+      cycleFrom.value = cycleMin.value; cycleTo.value = cycleMax.value; cycleRange.value = [cycleMin.value, cycleMax.value];
+      refreshAnalysis();
+      Vue.$msg && Vue.$msg.success('已重置筛选条件');
+    }
+
+    // ---------- 核心分析：按筛选计算真实统计与分布 ----------
+    function getBaseSamples() {
+      let list = samples.value;
+      if (filterUnit.value != null) list = list.filter(s => s.unit === filterUnit.value);
+      list = list.filter(s => s.cycle >= cycleFrom.value && s.cycle <= cycleTo.value);
+      return list;
+    }
+
+    let analysisSeq = 0;
+    function refreshAnalysis() {
+      clearTimeout(debTimer);
+      debTimer = setTimeout(runAnalysis, 150);
+    }
+    async function runAnalysis() {
+      const seq = ++analysisSeq;
+      const base = getBaseSamples();
+      if (!base.length) { enrichedAll = []; stats.total=0; stats.units=0; stats.highRisk=0; stats.avgRul=0; renderFaultChart([]); renderRiskChart([]); return; }
+      try {
+        const feats = base.map(s => s.f);
+        const [faultRes, rulRes] = await Promise.all([postJSON('/api/fault/batch', {features_list: feats}), postJSON('/api/rul/batch', {features_list: feats})]);
+        if (seq !== analysisSeq) return;
+        enrichedAll = base.map((s, i) => ({
+          ...s,
+          fault: faultRes.items[i].fault_label,
+          faultConf: faultRes.items[i].confidence,
+          rul: rulRes.items[i].rul_value,
+          risk: rulRes.items[i].risk_level,
+        }));
+        // 应用风险/故障筛选
+        let list = enrichedAll;
+        if (filterRisk.value.length) list = list.filter(x => filterRisk.value.includes(x.risk));
+        if (filterFault.value.length) list = list.filter(x => filterFault.value.includes(x.fault));
+        // 统计
+        stats.total = list.length;
+        stats.units = new Set(list.map(x => x.unit)).size;
+        stats.highRisk = list.filter(x => x.risk === '高风险').length;
+        stats.avgRul = list.length ? (list.reduce((a,x)=>a+x.rul,0)/list.length).toFixed(1) : 0;
+        // 分布图
+        renderFaultChart(list);
+        renderRiskChart(list);
+      } catch (e) {
+        console.error(e);
+        Vue.$msg && Vue.$msg.error('分析失败：' + e.message);
+      }
+    }
+
+    // ---------- 图表渲染 ----------
+    function ensureChart(id) {
+      const el = document.getElementById(id);
+      if (!el) return null;
+      if (!charts[id]) charts[id] = echarts.init(el);
+      return charts[id];
+    }
+    function renderFaultChart(list) {
+      const c = ensureChart('chartFault');
+      if (!c) return;
+      if (!list.length) { c.clear(); c.setOption(baseEmpty('暂无符合筛选条件的样本')); return; }
+      const cnt = {};
+      list.forEach(x => { cnt[x.fault] = (cnt[x.fault]||0) + 1; });
+      const data = Object.entries(cnt).map(([k,v]) => ({ name: k, value: v }));
+      const colors = data.map(d => d.name==='正常' ? '#67c23a' : PALETTE[(FAULT_TYPES.indexOf(d.name)+1) % PALETTE.length]);
+      c.setOption({
+        color: colors,
+        tooltip: { trigger:'item', formatter: p => `${p.name}<br/>${p.value} 条（${p.percent}%）` },
+        legend: { bottom: 0, type:'scroll', icon:'circle', itemWidth:10, itemHeight:10 },
+        series: [{
+          type:'pie', radius:['36%','66%'], center:['50%','44%'],
+          itemStyle:{borderRadius:6,borderColor:'#fff',borderWidth:2},
+          label:{formatter:'{b}\n{d}%', fontSize:11},
+          data, emphasis:{scaleSize:6}
+        }]
+      }, true);
+    }
+    function renderRiskChart(list) {
+      const c = ensureChart('chartRisk');
+      if (!c) return;
+      if (!list.length) { c.clear(); c.setOption(baseEmpty('暂无数据')); return; }
+      const cnt = { '高风险':0, '中风险':0, '低风险':0 };
+      list.forEach(x => { if (cnt[x.risk]!=null) cnt[x.risk]++; });
+      const data = ['高风险','中风险','低风险'].filter(k=>cnt[k]>0).map(k => ({name:k, value:cnt[k]}));
+      c.setOption({
+        color: data.map(d => RISK_COLOR[d.name]),
+        tooltip:{trigger:'item',formatter:p=>`${p.name}<br/>${p.value} 条（${p.percent}%）`},
+        legend:{bottom:0,icon:'circle',itemWidth:10,itemHeight:10},
+        series:[{type:'pie',radius:['36%','66%'],center:['50%','44%'],
+          itemStyle:{borderRadius:6,borderColor:'#fff',borderWidth:2},
+          label:{formatter:'{b}\n{d}%',fontSize:11},data}]
+      }, true);
+    }
+    async function refreshRulTrend() {
+      const c = ensureChart('chartRul');
+      if (!c) return;
+      if (selUnit.value == null) { c.clear(); c.setOption(baseEmpty('请选择设备')); return; }
+      const list = samples.value.filter(s => s.unit === selUnit.value && s.cycle >= cycleFrom.value && s.cycle <= cycleTo.value)
+                        .sort((a,b)=>a.cycle-b.cycle);
+      if (!list.length) { c.clear(); c.setOption(baseEmpty('当前区间无样本')); return; }
+      try {
+        const res = await postJSON('/api/rul/batch', {features_list: list.map(s=>s.f)});
+        const cycles = list.map(s=>s.cycle);
+        const ruls = res.items.map(i=>i.rul_value);
+        c.setOption({
+          tooltip:{trigger:'axis', formatter: ps => {
+            const p = ps[0];
+            const idx = p.dataIndex;
+            return `周期 ${cycles[idx]}<br/>预测 RUL：${ruls[idx]} 周期`;
+          }},
+          grid:{left:46,right:24,top:34,bottom:40},
+          xAxis:{type:'category', name:'运行周期', nameLocation:'middle', nameGap:26, data:cycles, axisLabel:{fontSize:10}},
+          yAxis:{type:'value', name:'RUL (周期)', min:0, axisLabel:{fontSize:10}},
+          dataZoom:[{type:'inside'},{type:'slider', height:16, bottom:6}],
+          series:[{
+            name:'预测RUL', type:'line', smooth:true, symbol:'none', data:ruls,
+            lineStyle:{width:2.5,color:'#2f6fb0'},
+            areaStyle:{color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(47,111,176,.30)'},{offset:1,color:'rgba(47,111,176,.02)'}])},
+            markLine:{
+              silent:true, symbol:'none',
+              data:[
+                {yAxis:30, lineStyle:{color:'#e64545',type:'dashed'}, label:{formatter:'高风险线 30',color:'#e64545',position:'insideEndTop',fontSize:10}},
+                {yAxis:60, lineStyle:{color:'#e6a23c',type:'dashed'}, label:{formatter:'中风险线 60',color:'#e6a23c',position:'insideEndTop',fontSize:10}}
+              ]
+            }
+          }]
+        }, true);
+      } catch(e){ console.error(e); Vue.$msg && Vue.$msg.error('RUL 趋势加载失败：' + e.message); }
+    }
+    function renderRadar() {
+      const c = ensureChart('chartRadar');
+      if (!c || !selSample.value) { if(c){c.clear(); c.setOption(baseEmpty('请选择样本'));} return; }
+      const devSamples = samples.value.filter(s => s.unit === selUnit.value);
+      const minmax = FEATURES.map((f, i) => {
+        const vals = devSamples.map(s => s.f[i]);
+        return { min: Math.min.apply(null, vals), max: Math.max.apply(null, vals) };
+      });
+      const norm = FEATURES.map((f, i) => {
+        const r = minmax[i]; const range = (r.max - r.min) || 1;
+        return +((selSample.value.f[i] - r.min) / range).toFixed(3);
+      });
+      c.setOption({
+        tooltip:{},
+        radar:{
+          indicator: FEATURES.map((f,i)=>({name:f, max:1})),
+          radius:'62%', center:['50%','50%'],
+          axisName:{color:'#606266', fontSize:10},
+          splitArea:{areaStyle:{color:['rgba(47,111,176,.03)','rgba(47,111,176,.06)']}}
+        },
+        series:[{type:'radar', data:[{value:norm, name:'当前样本', areaStyle:{color:'rgba(47,111,176,.25)'}, lineStyle:{color:'#2f6fb0',width:2}, itemStyle:{color:'#2f6fb0'}}]}]
+      }, true);
+    }
+    function baseEmpty(text) {
+      return { title:{text, left:'center', top:'middle', textStyle:{color:'#c0c4cc',fontSize:13,fontWeight:'normal'}} };
+    }
+
+    // ---------- 诊断动作 ----------
+    async function ensureBackend() {
+      if (!backendOk.value) throw new Error('后端服务未连接，请先通过 start.bat 启动');
+    }
+    function currentFeatures() {
+      if (!selSample.value) throw new Error('请先选择样本');
+      return selSample.value.f;
+    }
+    async function runDiagnose() {
+      if (diagLoading.value) return;
+      diagLoading.value = true;
+      try {
+        await ensureBackend();
+        const feats = currentFeatures();
+        const res = await postJSON('/api/fault/predict', {features: feats, unit: selUnitLabel.value});
+        diagResult.value = res;
+        Vue.$msg && Vue.$msg.success('故障诊断完成：' + res.fault_label);
+      } catch(e){ Vue.$msg && Vue.$msg.error(e.message); }
+      finally { diagLoading.value = false; }
+    }
+    async function runRul() {
+      if (rulLoading.value) return;
+      rulLoading.value = true;
+      try {
+        await ensureBackend();
+        const feats = currentFeatures();
+        const res = await postJSON('/api/rul/predict', {features: feats, unit: selUnitLabel.value});
+        rulResult.value = res;
+        Vue.$msg && Vue.$msg.success('寿命预测完成：剩余 ' + res.rul_value + ' 周期');
+      } catch(e){ Vue.$msg && Vue.$msg.error(e.message); }
+      finally { rulLoading.value = false; }
+    }
+    async function runOptimize() {
+      if (optLoading.value) return;
+      optLoading.value = true;
+      try {
+        await ensureBackend();
+        // 自动补全诊断与寿命
+        if (!diagResult.value || !rulResult.value) {
+          const feats = currentFeatures();
+          if (!diagResult.value) {
+            const f = await postJSON('/api/fault/predict', {features: feats, unit: selUnitLabel.value});
+            diagResult.value = f;
+          }
+          if (!rulResult.value) {
+            const r = await postJSON('/api/rul/predict', {features: feats, unit: selUnitLabel.value});
+            rulResult.value = r;
+          }
+        }
+        const res = await postJSON('/api/maintenance/optimize', {
+          unit: selUnitLabel.value,
+          fault_label: diagResult.value.fault_label,
+          fault_confidence: diagResult.value.confidence,
+          rul: rulResult.value.rul_value,
+          device_weight: deviceWeight.value,
+        });
+        optResult.value = res;
+        loadHistory();
+        Vue.$msg && Vue.$msg.success('运维决策已生成，并写入历史记录');
+      } catch(e){ Vue.$msg && Vue.$msg.error(e.message); }
+      finally { optLoading.value = false; }
+    }
+    async function runAll() {
+      if (runLoading.value) return;
+      runLoading.value = true;
+      try {
+        await ensureBackend();
+        const feats = currentFeatures();
+        const [f, r] = await Promise.all([
+          postJSON('/api/fault/predict', {features: feats, unit: selUnitLabel.value}),
+          postJSON('/api/rul/predict', {features: feats, unit: selUnitLabel.value})
+        ]);
+        diagResult.value = f; rulResult.value = r;
+        const o = await postJSON('/api/maintenance/optimize', {
+          unit: selUnitLabel.value, fault_label: f.fault_label, fault_confidence: f.confidence,
+          rul: r.rul_value, device_weight: deviceWeight.value,
+        });
+        optResult.value = o;
+        loadHistory();
+        activeTab.value = 'diag';
+        Vue.$msg && Vue.$msg.success('一键诊断完成：' + f.fault_label + ' · RUL ' + r.rul_value + ' 周期 · 优先级 ' + o.priority_level);
+      } catch(e){ Vue.$msg && Vue.$msg.error(e.message); }
+      finally { runLoading.value = false; }
+    }
+
+    // ---------- 历史记录 ----------
+    async function loadHistory() {
+      try {
+        const res = await getJSON('/api/maintenance/history');
+        history.value = res.items || [];
+      } catch(e){ console.error(e); }
+    }
+    async function deleteHistory(id) {
+      try {
+        await fetch(API_BASE + '/api/maintenance/history/' + id, {method:'DELETE'});
+        Vue.$msg && Vue.$msg.success('已删除');
+        loadHistory();
+      } catch(e){ Vue.$msg && Vue.$msg.error('删除失败'); }
+    }
+    async function clearHistory() {
+      try {
+        await fetch(API_BASE + '/api/maintenance/history', {method:'DELETE'});
+        Vue.$msg && Vue.$msg.success('已清空历史记录');
+        loadHistory();
+      } catch(e){ Vue.$msg && Vue.$msg.error('清空失败'); }
+    }
+
+    // ---------- CSV 导入（异步分片解析，避免大文件卡死） ----------
+    function onImportCsv(file) {
+      importing.value = true;
+      const raw = file.raw;
+      if (!raw) { importing.value = false; return; }
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const text = String(reader.result || '').replace(/^\uFEFF/, ''); // 去掉 BOM
+          const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+          if (lines.length < 2) throw new Error('CSV 内容为空或格式错误');
+          const header = lines[0].split(',').map(h => h.trim().replace(/^\uFEFF/,''));
+          const idxU = header.indexOf('unit');
+          const idxC = header.indexOf('cycle');
+          if (idxU < 0 || idxC < 0) throw new Error('CSV 需包含 unit 与 cycle 列');
+          const featIdx = FEATURES.map(f => header.indexOf(f));
+          if (featIdx.some(i => i < 0)) throw new Error('CSV 缺少 14 维特征列（' + FEATURES.join(',') + '）');
+          const smp = []; const unt = {};
+          // 分片解析：每片处理 500 行，让出主线程
+          for (let i = 1; i < lines.length; i += 500) {
+            const chunk = lines.slice(i, i + 500);
+            chunk.forEach(line => {
+              const parts = line.split(',');
+              const unit = Number(parts[idxU]);
+              const cycle = Number(parts[idxC]);
+              if (!Number.isFinite(unit) || !Number.isFinite(cycle)) return;
+              const f = featIdx.map(ix => Number(parts[ix]));
+              if (f.some(v => !Number.isFinite(v))) return;
+              smp.push({ unit, cycle, f });
+              if (!unt[unit] || unt[unit].cycles < cycle) unt[unit] = { cycles: cycle };
+            });
+            await new Promise(res => setTimeout(res, 0));
+          }
+          if (!smp.length) throw new Error('未解析到有效样本数据');
+          setData(smp, unt);
+          Vue.$msg && Vue.$msg.success('导入成功：共 ' + smp.length + ' 条样本，' + Object.keys(unt).length + ' 台设备');
+        } catch(e) {
+          Vue.$msg && Vue.$msg.error('导入失败：' + e.message);
+        } finally { importing.value = false; }
+      };
+      reader.onerror = () => { importing.value = false; Vue.$msg && Vue.$msg.error('文件读取失败'); };
+      reader.readAsText(raw);
+    }
+
+    // ---------- 手动添加 ----------
+    const manual = reactive({ unit: 99, cycle: 1, feats: FEATURES.map(()=> 0) });
+    const manualDialog = ref(false);
+    function addManualSample() {
+      const f = manual.feats.map(v => Number(v));
+      if (f.some(v => !Number.isFinite(v))) { Vue.$msg && Vue.$msg.error('特征值必须为数字'); return; }
+      samples.value.push({ unit: manual.unit, cycle: manual.cycle, f });
+      if (!units.value[manual.unit]) units.value[manual.unit] = { cycles: manual.cycle };
+      if (units.value[manual.unit].cycles < manual.cycle) units.value[manual.unit].cycles = manual.cycle;
+      deviceOptions.value = Object.keys(units.value).map(Number).sort((a,b)=>a-b)
+        .map(u => ({ value: u, label: 'DEV-' + String(u).padStart(2,'0') }));
+      if (selUnit.value == null) selUnit.value = manual.unit;
+      manualDialog.value = false;
+      Vue.$msg && Vue.$msg.success('已添加样本（DEV-' + String(manual.unit).padStart(2,'0') + ' 周期 ' + manual.cycle + '）');
+      onSelUnitChange(); refreshAnalysis();
+    }
+
+    // ---------- 工具函数 ----------
+    function riskTag(r){ return {'高风险':'danger','中风险':'warning','低风险':'success'}[r] || 'info'; }
+    function riskColor(r){ return RISK_COLOR[r] || '#909399'; }
+    function levelTag(l){ return {'紧急':'danger','高':'warning','中':'primary','低':'info'}[l] || 'info'; }
+    function levelColor(l){ return {'紧急':'#e64545','高':'#e6a23c','中':'#2f6fb0','低':'#909399'}[l] || '#909399'; }
+
+    // ---------- 生命周期 ----------
+    onMounted(async () => {
+      // 探测后端
+      try { await getJSON('/api/dataset/meta'); backendOk.value = true; }
+      catch(e){ backendOk.value = false; Vue.$msg && Vue.$msg.warning('后端未连接，请通过 start.bat 启动后端后刷新页面'); }
+      loadBundled();
+      loadHistory();
+      window.addEventListener('resize', onResize);
+      nextTick(() => setTimeout(() => { refreshRulTrend(); renderRadar(); }, 200));
+    });
+    function onResize() { Object.values(charts).forEach(c => c && c.resize()); }
+    onBeforeUnmount(() => window.removeEventListener('resize', onResize));
+
+    // 监听周期滑块同步
+    watch(cycleRange, v => { if (cycleFrom.value !== v[0]) cycleFrom.value = v[0]; if (cycleTo.value !== v[1]) cycleTo.value = v[1]; });
+
+    // 切换 Tab 时对隐藏图表执行 resize / 重绘
+    watch(activeTab, () => {
+      nextTick(() => {
+        setTimeout(() => {
+          Object.values(charts).forEach(c => c && c.resize());
+          if (activeTab.value === 'rul') refreshRulTrend();
+          if (activeTab.value === 'diag') renderRadar();
+        }, 80);
+      });
+    });
+
+    return {
+      backendOk, samples, units, deviceOptions, faultTypes,
+      filterUnit, cycleMin, cycleMax, cycleFrom, cycleTo, cycleRange, filterRisk, filterFault,
+      selUnit, selCycle, sampleOptions, selSample, selUnitLabel,
+      diagResult, rulResult, optResult, deviceWeight,
+      runLoading, diagLoading, rulLoading, optLoading, importing, activeTab,
+      stats, history, hisRisk, hisPriority, filteredHistory,
+      manual, manualDialog, featureNames: FEATURES,
+      onFilterChange, onSliderChange, resetFilter,
+      onSelUnitChange, onSelCycleChange,
+      runAll, runDiagnose, runRul, runOptimize,
+      loadHistory, deleteHistory, clearHistory, onImportCsv, addManualSample,
+      riskTag, riskColor, levelTag, levelColor,
+    };
+  }
+});
+
+// 全局消息（先初始化再挂载，保证 onMounted 内可用）
+Vue.$msg = ElementPlus.ElMessage;
+app.use(ElementPlus);
+app.mount('#app');
 </script>
 </body>
 </html>
