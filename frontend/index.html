@@ -8,7 +8,6 @@
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
     <script src="https://unpkg.com/element-plus"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
-    <script src="./sample_data.js"></script>
     <style>
         * { box-sizing: border-box; }
         body { margin: 0; background: #f5f7fa; font-family: "Microsoft YaHei", sans-serif; }
@@ -56,6 +55,8 @@
         .stat-card { background: white; border-radius: 8px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); text-align: center; }
         .stat-value { font-size: 24px; font-weight: 700; color: #409eff; }
         .stat-label { font-size: 12px; color: #909399; margin-top: 4px; }
+
+        .empty-tip { text-align: center; color: #909399; padding: 40px 0; }
     </style>
 </head>
 <body>
@@ -99,6 +100,9 @@
         </div>
         <div class="control-item">
             <el-button type="primary" plain @click="addDialogVisible = true">手动添加样本</el-button>
+        </div>
+        <div class="control-item">
+            <el-button type="danger" plain @click="clearAllData">清空数据</el-button>
         </div>
     </div>
 
@@ -168,6 +172,9 @@
                     </p>
                     <p><strong>置信度：</strong>{{ (faultResult.confidence * 100).toFixed(2) }}%</p>
                 </div>
+                <div v-else-if="filteredSamples.length === 0" class="empty-tip">
+                    请先导入CSV样本或手动添加样本
+                </div>
             </div>
         </el-tab-pane>
 
@@ -184,6 +191,9 @@
                     <el-tag :type="rulResult.risk_level === '高风险' ? 'danger' : rulResult.risk_level === '中风险' ? 'warning' : 'success'">
                         {{ rulResult.risk_level }}
                     </el-tag>
+                </div>
+                <div v-else-if="filteredSamples.length === 0" class="empty-tip">
+                    请先导入CSV样本或手动添加样本
                 </div>
             </div>
         </el-tab-pane>
@@ -203,25 +213,33 @@
                     <p><strong>运维建议：</strong>{{ maintResult.suggestion }}</p>
                     <p><strong>备件建议：</strong>{{ maintResult.spare_parts }}</p>
                 </div>
+                <div v-else-if="!faultResult || !rulResult" class="empty-tip">
+                    请先执行故障诊断和寿命预测
+                </div>
             </div>
         </el-tab-pane>
 
         <!-- 数据分析 -->
         <el-tab-pane label="数据分析" name="analysis">
-            <div class="chart-row">
-                <div class="chart-box">
-                    <div class="chart-title">故障状态分布</div>
-                    <div ref="faultChartRef" class="chart-container"></div>
-                </div>
-                <div class="chart-box">
-                    <div class="chart-title">风险等级分布</div>
-                    <div ref="riskChartRef" class="chart-container"></div>
-                </div>
+            <div v-if="filteredSamples.length === 0" class="empty-tip">
+                请先导入CSV样本并执行批量分析
             </div>
-            <div class="chart-row">
-                <div class="chart-box" style="min-width: 600px;">
-                    <div class="chart-title">当前样本传感器特征雷达图</div>
-                    <div ref="radarChartRef" class="chart-container"></div>
+            <div v-else>
+                <div class="chart-row">
+                    <div class="chart-box">
+                        <div class="chart-title">故障状态分布</div>
+                        <div ref="faultChartRef" class="chart-container"></div>
+                    </div>
+                    <div class="chart-box">
+                        <div class="chart-title">风险等级分布</div>
+                        <div ref="riskChartRef" class="chart-container"></div>
+                    </div>
+                </div>
+                <div class="chart-row">
+                    <div class="chart-box" style="min-width: 600px;">
+                        <div class="chart-title">当前样本传感器特征雷达图</div>
+                        <div ref="radarChartRef" class="chart-container"></div>
+                    </div>
                 </div>
             </div>
         </el-tab-pane>
@@ -271,8 +289,6 @@ const { createApp, ref, computed, onMounted, reactive, watch, nextTick } = Vue;
 // 14个特征列，与模型严格对应
 const FEATURE_COLUMNS = ['s2','s3','s4','s7','s8','s9','s11','s12','s13','s14','s15','s17','s20','s21'];
 const FEATURE_NAMES = ['s2','s3','s4','s7','s8','s9','s11','s12','s13','s14','s15','s17','s20','s21'];
-const CHUNK_SIZE = 50; // CSV解析分片大小
-const BATCH_SIZE = 200; // 批量分析单批大小，越大越快但越容易卡
 const API_BASE = "http://localhost:8000";
 
 createApp({
@@ -280,11 +296,11 @@ createApp({
         const activeTab = ref('fault');
         const addDialogVisible = ref(false);
         const isImporting = ref(false);
-        const importProgress = ref(0);
         const diagnoseLoading = ref(false);
         const rulLoading = ref(false);
         const maintLoading = ref(false);
         const isAnalyzing = ref(false);
+        const chartsInited = ref(false);
 
         // 图表引用
         const faultChartRef = ref(null);
@@ -294,16 +310,12 @@ createApp({
         let riskChart = null;
         let radarChart = null;
 
-        // 样本库
-        const sampleLibrary = ref(window.SAMPLE_LIBRARY || [
-            { name: "样本1 - 正常健康状态", features: [-0.812, -0.534, -0.678, 0.945, -0.421, -0.756, -0.312, 0.823, -0.601, -0.547, -0.418, -0.835, 0.912, 0.734], unit: 1, cycle: 1, rul: 125, risk: '低风险', fault: 0 },
-            { name: "样本2 - 早期退化状态", features: [0.215, 0.108, -0.123, 0.342, -0.207, 0.116, 0.221, 0.513, -0.109, 0.014, 0.125, -0.318, 0.427, 0.209], unit: 1, cycle: 60, rul: 70, risk: '中风险', fault: 0 },
-            { name: "样本3 - 严重故障状态", features: [1.823, 1.546, 1.237, -1.512, 1.634, 1.325, 1.741, -1.218, 1.429, 1.136, 1.542, -1.815, -1.237, -1.628], unit: 1, cycle: 120, rul: 15, risk: '高风险', fault: 1 }
-        ]);
+        // 样本库 - 初始为空，无任何预置数据
+        const sampleLibrary = ref([]);
 
         // 筛选条件
         const filterUnit = ref(null);
-        const filterCycleRange = ref([1, 200]);
+        const filterCycleRange = ref([1, 100]);
         const filterRisk = ref(null);
 
         const deviceUnit = ref(1);
@@ -329,7 +341,7 @@ createApp({
 
         const maxCycle = computed(() => {
             const cycles = sampleLibrary.value.map(s => s.cycle || 1);
-            return Math.max(...cycles, 100);
+            return cycles.length > 0 ? Math.max(...cycles) : 100;
         });
 
         const filteredSamples = computed(() => {
@@ -342,7 +354,7 @@ createApp({
         });
 
         const currentSample = computed(() => {
-            return filteredSamples.value[selectedFilterIndex.value] || sampleLibrary.value[0];
+            return filteredSamples.value[selectedFilterIndex.value] || null;
         });
 
         const highRiskCount = computed(() => {
@@ -356,15 +368,12 @@ createApp({
         });
 
         const importText = computed(() => {
-            if (!isImporting.value) return '导入CSV样本';
-            return `导入中 ${importProgress.value}%`;
+            return isImporting.value ? '导入中...' : '导入CSV样本';
         });
 
-        // ========== 工具函数 ==========
-        const sleep = (ms = 0) => new Promise(resolve => setTimeout(resolve, ms));
-
-        // ========== CSV异步分片解析 ==========
-        const parseCsvAsync = async (text) => {
+        // ========== CSV极速解析 ==========
+        const parseCsvFast = (text) => {
+            // 去除BOM
             if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
             
             const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
@@ -380,114 +389,121 @@ createApp({
             const colIndex = {};
             headers.forEach((h, i) => colIndex[h] = i);
 
-            const result = [];
-            const total = lines.length - 1;
+            const result = new Array(lines.length - 1);
+            let count = 0;
 
-            for (let i = 1; i < lines.length; i += CHUNK_SIZE) {
-                const end = Math.min(i + CHUNK_SIZE, lines.length);
+            // 一次性同步解析，不做分片await，几千条数据毫秒级完成
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(',');
+                if (values.length < headers.length) continue;
+
+                const features = new Array(14);
+                let valid = true;
+                for (let k = 0; k < 14; k++) {
+                    const val = parseFloat(values[colIndex[FEATURE_COLUMNS[k]]]);
+                    if (isNaN(val)) { valid = false; break; }
+                    features[k] = val;
+                }
+                if (!valid) continue;
+
+                const unit = colIndex['unit'] !== undefined ? parseInt(values[colIndex['unit']]) : null;
+                const cycle = colIndex['cycle'] !== undefined ? parseInt(values[colIndex['cycle']]) : i;
+                const rul = colIndex['rul'] !== undefined ? parseInt(values[colIndex['rul']]) : null;
+                const fault = colIndex['fault'] !== undefined ? parseInt(values[colIndex['fault']]) : 0;
                 
-                for (let j = i; j < end; j++) {
-                    const values = lines[j].split(',');
-                    if (values.length < headers.length) continue;
-
-                    const features = FEATURE_COLUMNS.map(col => parseFloat(values[colIndex[col]]));
-                    if (features.some(isNaN)) continue;
-
-                    const unit = colIndex['unit'] !== undefined ? parseInt(values[colIndex['unit']]) : null;
-                    const cycle = colIndex['cycle'] !== undefined ? parseInt(values[colIndex['cycle']]) : j;
-                    const rul = colIndex['rul'] !== undefined ? parseInt(values[colIndex['rul']]) : null;
-                    const fault = colIndex['fault'] !== undefined ? parseInt(values[colIndex['fault']]) : 0;
-                    
-                    let risk = '低风险';
-                    if (rul != null) {
-                        if (rul <= 30) risk = '高风险';
-                        else if (rul <= 60) risk = '中风险';
-                    }
-
-                    const name = unit != null ? `设备${unit}-第${cycle}周期` : `CSV样本-${j}`;
-                    result.push({ name, features, unit, cycle, rul, fault, risk });
+                let risk = '低风险';
+                if (rul != null) {
+                    if (rul <= 30) risk = '高风险';
+                    else if (rul <= 60) risk = '中风险';
                 }
 
-                importProgress.value = Math.round((end - 1) / total * 100);
-                await sleep();
+                const name = unit != null ? `设备${unit}-第${cycle}周期` : `CSV样本-${i}`;
+                result[count++] = { name, features, unit, cycle, rul, fault, risk };
             }
+
+            result.length = count;
             return result;
         };
 
-        // ========== 分片批量分析核心函数 ==========
+        // ========== 批量分析（一次性并行提交） ==========
         const runBatchAnalyze = async () => {
             const samples = filteredSamples.value;
             if (samples.length === 0) {
-                ElementPlus.ElMessage.warning('没有可分析的样本，请先导入CSV或添加样本');
+                ElementPlus.ElMessage.warning('没有可分析的样本，请先导入CSV');
                 return;
             }
             isAnalyzing.value = true;
+            const startTime = Date.now();
             
             try {
-                for (let i = 0; i < samples.length; i += BATCH_SIZE) {
-                    const batch = samples.slice(i, i + BATCH_SIZE);
-                    const items = batch.map(s => s.features);
+                // 一次性提取所有特征
+                const items = samples.map(s => s.features);
 
-                    // 批量故障诊断
-                    const faultRes = await fetch(`${API_BASE}/api/fault/batch`, {
+                // 故障+寿命 两个请求并行发起，只需要2次网络往返
+                const [faultRes, rulRes] = await Promise.all([
+                    fetch(`${API_BASE}/api/fault/batch`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ items })
-                    });
-                    const faultData = await faultRes.json();
-                    if (faultData.error) throw new Error(faultData.error);
-
-                    // 批量寿命预测
-                    const rulRes = await fetch(`${API_BASE}/api/rul/batch`, {
+                    }),
+                    fetch(`${API_BASE}/api/rul/batch`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ items })
-                    });
-                    const rulData = await rulRes.json();
-                    if (rulData.error) throw new Error(rulData.error);
+                    })
+                ]);
 
-                    // 回写结果到对应样本
-                    batch.forEach((s, idx) => {
-                        const globalIdx = i + idx;
-                        samples[globalIdx].fault = faultData.labels[idx];
-                        samples[globalIdx].rul = Math.round(rulData.values[idx] * 10) / 10;
-                        samples[globalIdx].risk = 
-                            samples[globalIdx].rul <= 30 ? '高风险' :
-                            samples[globalIdx].rul <= 60 ? '中风险' : '低风险';
-                    });
+                const faultData = await faultRes.json();
+                const rulData = await rulRes.json();
 
-                    // 每批释放一次主线程，避免页面卡死
-                    await nextTick();
+                if (faultData.error) throw new Error(faultData.error);
+                if (rulData.error) throw new Error(rulData.error);
+
+                // 一次性回写所有结果
+                for (let i = 0; i < samples.length; i++) {
+                    samples[i].fault = faultData.labels[i];
+                    samples[i].rul = Math.round(rulData.values[i] * 10) / 10;
+                    samples[i].risk = 
+                        samples[i].rul <= 30 ? '高风险' :
+                        samples[i].rul <= 60 ? '中风险' : '低风险';
                 }
-                ElementPlus.ElMessage.success(`批量分析完成，共处理 ${samples.length} 条样本`);
+
+                const cost = ((Date.now() - startTime) / 1000).toFixed(2);
+                ElementPlus.ElMessage.success(`分析完成，共 ${samples.length} 条，耗时 ${cost} 秒`);
+
             } catch (e) {
                 ElementPlus.ElMessage.error('批量分析失败：' + e.message);
             } finally {
                 isAnalyzing.value = false;
-                updateCharts();
+                // 分析完成后一次性刷新图表
+                if (activeTab.value === 'analysis') {
+                    nextTick(() => updateCharts());
+                }
             }
         };
 
         // ========== CSV上传 ==========
         const handleCsvUpload = (file) => {
             isImporting.value = true;
-            importProgress.value = 0;
 
             const reader = new FileReader();
-            reader.onload = async (e) => {
-                const samples = await parseCsvAsync(e.target.result);
+            reader.onload = (e) => {
+                const samples = parseCsvFast(e.target.result);
                 
                 if (samples.length > 0) {
-                    sampleLibrary.value = sampleLibrary.value.concat(samples);
+                    // 直接替换数组，不拼接，避免内存累积
+                    sampleLibrary.value = samples;
                     filterCycleRange.value = [1, maxCycle.value];
                     selectedFilterIndex.value = 0;
+                    faultResult.value = null;
+                    rulResult.value = null;
+                    maintResult.value = null;
                     ElementPlus.ElMessage.success(`成功导入 ${samples.length} 条样本，点击「批量分析」开始计算`);
                 } else {
                     ElementPlus.ElMessage.warning('未解析到有效数据行');
                 }
 
                 isImporting.value = false;
-                importProgress.value = 0;
             };
 
             reader.onerror = () => {
@@ -497,6 +513,30 @@ createApp({
 
             reader.readAsText(file, 'UTF-8');
             return false;
+        };
+
+        // ========== 清空所有数据 ==========
+        const clearAllData = () => {
+            ElementPlus.ElMessageBox.confirm('确定要清空所有样本数据吗？', '提示', {
+                confirmButtonText: '确定',
+                cancelButtonText: '取消',
+                type: 'warning'
+            }).then(() => {
+                sampleLibrary.value = [];
+                faultResult.value = null;
+                rulResult.value = null;
+                maintResult.value = null;
+                filterUnit.value = null;
+                filterCycleRange.value = [1, 100];
+                filterRisk.value = null;
+                selectedFilterIndex.value = 0;
+                // 销毁图表
+                if (faultChart) { faultChart.dispose(); faultChart = null; }
+                if (riskChart) { riskChart.dispose(); riskChart = null; }
+                if (radarChart) { radarChart.dispose(); radarChart = null; }
+                chartsInited.value = false;
+                ElementPlus.ElMessage.success('数据已清空');
+            }).catch(() => {});
         };
 
         // ========== 手动添加样本 ==========
@@ -520,7 +560,7 @@ createApp({
                 return;
             }
 
-            const newItem = {
+            sampleLibrary.value.push({
                 name: newSample.name.trim(),
                 features: values,
                 unit: deviceUnit.value,
@@ -528,28 +568,28 @@ createApp({
                 rul: null,
                 fault: 0,
                 risk: '低风险'
-            };
-
-            sampleLibrary.value.push(newItem);
-            selectedFilterIndex.value = filteredSamples.value.length - 1;
+            });
             
+            selectedFilterIndex.value = filteredSamples.value.length - 1;
             newSample.name = '';
             newSample.featuresText = '';
             addDialogVisible.value = false;
             ElementPlus.ElMessage.success('样本添加成功');
         };
 
-        // ========== 图表相关 ==========
+        // ========== 图表相关（懒加载） ==========
         const initCharts = () => {
+            if (chartsInited.value) return;
             if (faultChartRef.value) faultChart = echarts.init(faultChartRef.value);
             if (riskChartRef.value) riskChart = echarts.init(riskChartRef.value);
             if (radarChartRef.value) radarChart = echarts.init(radarChartRef.value);
-            updateCharts();
+            chartsInited.value = true;
         };
 
         const updateCharts = () => {
             const data = filteredSamples.value;
             if (data.length === 0) return;
+            if (!chartsInited.value) initCharts();
 
             // 故障分布饼图
             if (faultChart) {
@@ -611,7 +651,13 @@ createApp({
             }
         };
 
-        const handleTabChange = () => {
+        const handleTabChange = (name) => {
+            if (name === 'analysis') {
+                nextTick(() => {
+                    initCharts();
+                    updateCharts();
+                });
+            }
             nextTick(() => {
                 faultChart?.resize();
                 riskChart?.resize();
@@ -707,28 +753,27 @@ createApp({
             selectedFilterIndex.value = 0;
         };
 
-        // 监听筛选变化更新图表
-        watch([filterUnit, filterCycleRange, filterRisk], () => {
-            selectedFilterIndex.value = 0;
-            nextTick(() => updateCharts());
-        });
-
         // 监听选中样本变化更新雷达图
         watch(selectedFilterIndex, () => {
-            if (activeTab.value === 'analysis') {
+            if (activeTab.value === 'analysis' && chartsInited.value) {
                 updateCharts();
+            }
+        });
+
+        // 监听筛选变化
+        watch([filterUnit, filterCycleRange, filterRisk], () => {
+            selectedFilterIndex.value = 0;
+            if (activeTab.value === 'analysis' && chartsInited.value) {
+                nextTick(() => updateCharts());
             }
         });
 
         onMounted(() => {
             loadHistory();
-            nextTick(() => {
-                initCharts();
-                window.addEventListener('resize', () => {
-                    faultChart?.resize();
-                    riskChart?.resize();
-                    radarChart?.resize();
-                });
+            window.addEventListener('resize', () => {
+                faultChart?.resize();
+                riskChart?.resize();
+                radarChart?.resize();
             });
         });
 
@@ -767,7 +812,8 @@ createApp({
             rulLoading,
             maintLoading,
             isAnalyzing,
-            runBatchAnalyze
+            runBatchAnalyze,
+            clearAllData
         };
     }
 }).use(ElementPlus).mount('#app');
